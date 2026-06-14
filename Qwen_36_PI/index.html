@@ -1,0 +1,1871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XCOM 2 — Tactical Strategy Game</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; color: #e0e0e0; }
+#gameCanvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+
+/* ── HUD Overlay ── */
+#hud { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+#hud > * { pointer-events: auto; }
+
+/* ── Top Bar ── */
+#topBar {
+  position: absolute; top: 0; left: 0; right: 0; height: 48px;
+  background: linear-gradient(180deg, rgba(10,15,30,0.95) 0%, rgba(10,15,30,0.7) 100%);
+  border-bottom: 1px solid rgba(0,180,255,0.3);
+  display: flex; align-items: center; padding: 0 16px; gap: 24px; z-index: 11;
+}
+#topBar .section { display: flex; align-items: center; gap: 8px; }
+#topBar .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #5a8aaa; }
+#topBar .value { font-size: 14px; font-weight: 600; color: #00d4ff; }
+#objectiveText { font-size: 12px; color: #aab; flex-grow: 1; }
+#turnPhase {
+  padding: 4px 14px; border-radius: 3px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+#turnPhase.player { background: rgba(0,150,255,0.25); color: #00b4ff; border: 1px solid rgba(0,150,255,0.5); }
+#turnPhase.enemy { background: rgba(255,50,50,0.25); color: #ff4444; border: 1px solid rgba(255,50,50,0.5); }
+
+/* ── Bottom Action Panel ── */
+#actionPanel {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 160px;
+  background: linear-gradient(0deg, rgba(10,15,30,0.97) 0%, rgba(10,15,30,0.8) 100%);
+  border-top: 1px solid rgba(0,180,255,0.3);
+  display: flex; padding: 12px 16px; gap: 12px; z-index: 11;
+}
+#selectedUnitInfo {
+  width: 220px; min-width: 220px; display: flex; flex-direction: column; gap: 6px;
+  padding-right: 12px; border-right: 1px solid rgba(255,255,255,0.1);
+}
+#selectedUnitInfo .unitName { font-size: 16px; font-weight: 700; color: #00d4ff; }
+#selectedUnitInfo .unitClass { font-size: 11px; color: #7a9aaa; text-transform: uppercase; letter-spacing: 1px; }
+.statRow { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.statRow .statLabel { width: 30px; color: #6a8a9a; }
+.statBar { flex-grow: 1; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+.statBar .fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.statBar .fill.hp { background: linear-gradient(90deg, #ff3333, #44cc44); }
+.statBar .fill.ap { background: linear-gradient(90deg, #ffaa00, #ffdd44); }
+.statBar .fill.xp { background: linear-gradient(90deg, #6644ff, #aa88ff); }
+#actionButtons { flex-grow: 1; display: flex; gap: 8px; flex-wrap: wrap; align-content: flex-start; }
+.actionBtn {
+  padding: 8px 16px; border: 1px solid rgba(0,180,255,0.4); border-radius: 4px;
+  background: rgba(0,100,200,0.15); color: #aaccee; font-size: 12px; font-weight: 600;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.15s;
+}
+.actionBtn:hover { background: rgba(0,150,255,0.3); color: #fff; border-color: rgba(0,200,255,0.7); }
+.actionBtn:active { transform: scale(0.97); }
+.actionBtn.disabled { opacity: 0.3; cursor: not-allowed; }
+.actionBtn .apCost { font-size: 10px; color: #ffaa44; margin-left: 4px; }
+#endTurnBtn {
+  padding: 8px 20px; border: 1px solid rgba(255,150,0,0.5); border-radius: 4px;
+  background: rgba(200,100,0,0.2); color: #ffaa44; font-size: 13px; font-weight: 700;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: all 0.15s;
+}
+#endTurnBtn:hover { background: rgba(255,150,0,0.35); color: #fff; }
+
+/* ── Unit Roster (left side) ── */
+#rosterPanel {
+  position: absolute; left: 0; top: 56px; bottom: 168px; width: 180px;
+  background: linear-gradient(90deg, rgba(10,15,30,0.9) 0%, rgba(10,15,30,0.6) 100%);
+  border-right: 1px solid rgba(0,180,255,0.2);
+  padding: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 11;
+}
+.rosterUnit {
+  padding: 6px 8px; border-radius: 3px; cursor: pointer; transition: all 0.15s;
+  border: 1px solid transparent; display: flex; flex-direction: column; gap: 3px;
+}
+.rosterUnit:hover { background: rgba(0,100,200,0.15); }
+.rosterUnit.selected { border-color: rgba(0,180,255,0.6); background: rgba(0,100,200,0.25); }
+.rosterUnit.dead { opacity: 0.35; }
+.rosterUnit .rName { font-size: 12px; font-weight: 600; }
+.rosterUnit .rHP { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+.rosterUnit .rHP .fill { height: 100%; background: #44cc44; border-radius: 2px; transition: width 0.3s; }
+.rosterUnit .rHP .fill.low { background: #ff4444; }
+.rosterUnit .rHP .fill.med { background: #ffaa00; }
+.rosterUnit .rStatus { font-size: 9px; color: #ffaa44; }
+
+/* ── Enemy Panel (right side) ── */
+#enemyPanel {
+  position: absolute; right: 0; top: 56px; bottom: 168px; width: 180px;
+  background: linear-gradient(-90deg, rgba(10,15,30,0.9) 0%, rgba(10,15,30,0.6) 100%);
+  border-left: 1px solid rgba(255,50,50,0.2);
+  padding: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 11;
+}
+.enemyUnit {
+  padding: 6px 8px; border-radius: 3px; cursor: pointer;
+  border: 1px solid transparent; display: flex; flex-direction: column; gap: 3px;
+}
+.enemyUnit:hover { background: rgba(200,50,50,0.15); }
+.enemyUnit .eName { font-size: 12px; font-weight: 600; color: #ff8866; }
+.enemyUnit .eHP { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+.enemyUnit .eHP .fill { height: 100%; background: #ff4444; border-radius: 2px; transition: width 0.3s; }
+.enemyUnit .eStatus { font-size: 9px; color: #ffaa44; }
+
+/* ── Turn Order ── */
+#turnOrder {
+  position: absolute; right: 192px; top: 56px; width: 140px;
+  background: rgba(10,15,30,0.85); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px; padding: 8px; z-index: 11;
+}
+#turnOrder .title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #5a8aaa; margin-bottom: 6px; }
+.turnEntry { font-size: 11px; padding: 2px 0; display: flex; align-items: center; gap: 4px; }
+.turnEntry .dot { width: 6px; height: 6px; border-radius: 50%; }
+.turnEntry .dot.player { background: #00b4ff; }
+.turnEntry .dot.enemy { background: #ff4444; }
+.turnEntry.active { color: #fff; font-weight: 700; }
+
+/* ── Minimap ── */
+#minimap {
+  position: absolute; left: 192px; top: 56px; width: 160px; height: 160px;
+  background: rgba(10,15,30,0.9); border: 1px solid rgba(0,180,255,0.3);
+  border-radius: 4px; overflow: hidden; z-index: 11;
+}
+#minimap canvas { width: 100%; height: 100%; }
+
+/* ── Message Log ── */
+#messageLog {
+  position: absolute; left: 192px; bottom: 168px; width: 320px; height: 120px;
+  background: rgba(10,15,30,0.85); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px; padding: 8px; overflow-y: auto; z-index: 11;
+}
+#messageLog .msg { font-size: 11px; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+#messageLog .msg.damage { color: #ff6644; }
+#messageLog .msg.heal { color: #44cc66; }
+#messageLog .msg.info { color: #88aacc; }
+#messageLog .msg.kill { color: #ffaa44; font-weight: 600; }
+
+/* ── Tooltip ── */
+#tooltip {
+  position: fixed; background: rgba(10,15,30,0.95); border: 1px solid rgba(0,180,255,0.4);
+  border-radius: 4px; padding: 8px 12px; font-size: 11px; pointer-events: none;
+  display: none; z-index: 100; max-width: 200px;
+}
+#tooltip .ttTitle { font-weight: 700; color: #00d4ff; margin-bottom: 4px; }
+#tooltip .ttStat { color: #aab; }
+
+/* ── Loading Screen ── */
+#loadingScreen {
+  position: fixed; inset: 0; background: #0a0f1e; display: flex;
+  flex-direction: column; align-items: center; justify-content: center; z-index: 1000;
+}
+#loadingScreen h1 { font-size: 36px; color: #00d4ff; letter-spacing: 4px; margin-bottom: 8px; }
+#loadingScreen p { color: #5a7a9a; font-size: 14px; margin-bottom: 24px; }
+#loadingBar { width: 300px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
+#loadingBar .fill { height: 100%; width: 0%; background: #00d4ff; border-radius: 3px; transition: width 0.3s; }
+
+/* ── Victory/Defeat ── */
+#endScreen {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1000;
+}
+#endScreen h1 { font-size: 48px; letter-spacing: 4px; margin-bottom: 16px; }
+#endScreen h1.victory { color: #44cc66; }
+#endScreen h1.defeat { color: #ff4444; }
+#endScreen p { color: #aab; font-size: 16px; margin-bottom: 24px; }
+#endScreen button {
+  padding: 12px 32px; border: 1px solid rgba(0,180,255,0.5); border-radius: 4px;
+  background: rgba(0,100,200,0.2); color: #00d4ff; font-size: 14px; font-weight: 600;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+}
+#endScreen button:hover { background: rgba(0,150,255,0.4); color: #fff; }
+
+/* ── Damage Numbers ── */
+.dmgNum {
+  position: fixed; font-size: 20px; font-weight: 700; pointer-events: none;
+  z-index: 200; text-shadow: 0 0 4px rgba(0,0,0,0.9); transition: all 0.8s ease-out;
+}
+.dmgNum.dmg { color: #ff4444; }
+.dmgNum.heal { color: #44cc66; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,180,255,0.3); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="hud">
+  <!-- Top Bar -->
+  <div id="topBar">
+    <div class="section">
+      <span class="label">Mission</span>
+      <span class="value" id="missionName">Alien Outpost</span>
+    </div>
+    <div class="section">
+      <span class="label">Turn</span>
+      <span class="value" id="turnNumber">1</span>
+    </div>
+    <div class="section">
+      <span class="label">Phase</span>
+      <span id="turnPhase" class="player">Player Turn</span>
+    </div>
+    <div class="section">
+      <span class="label">Squad</span>
+      <span class="value" id="squadCount">4/4</span>
+    </div>
+    <div class="section">
+      <span class="label">Enemies</span>
+      <span class="value" id="enemyCount">8</span>
+    </div>
+    <span id="objectiveText">Eliminate all hostile aliens</span>
+  </div>
+
+  <!-- Minimap -->
+  <div id="minimap"><canvas id="minimapCanvas"></canvas></div>
+
+  <!-- Unit Roster -->
+  <div id="rosterPanel">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#5a8aaa;margin-bottom:4px;">XCOM Squad</div>
+  </div>
+
+  <!-- Enemy Panel -->
+  <div id="enemyPanel">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#aa5555;margin-bottom:4px;">Hostiles</div>
+  </div>
+
+  <!-- Turn Order -->
+  <div id="turnOrder">
+    <div class="title">Initiative</div>
+  </div>
+
+  <!-- Message Log -->
+  <div id="messageLog"></div>
+
+  <!-- Action Panel -->
+  <div id="actionPanel">
+    <div id="selectedUnitInfo">
+      <div class="unitName" id="selName">No Unit Selected</div>
+      <div class="unitClass" id="selClass"></div>
+      <div class="statRow">
+        <span class="statLabel">HP</span>
+        <div class="statBar"><div class="fill hp" id="selHP" style="width:100%"></div></div>
+        <span id="selHPText">5/5</span>
+      </div>
+      <div class="statRow">
+        <span class="statLabel">AP</span>
+        <div class="statBar"><div class="fill ap" id="selAP" style="width:100%"></div></div>
+        <span id="selAPText">2/2</span>
+      </div>
+      <div class="statRow">
+        <span class="statLabel">XP</span>
+        <div class="statBar"><div class="fill xp" id="selXP" style="width:0%"></div></div>
+      </div>
+      <div class="statRow">
+        <span class="statLabel">AM</span>
+        <span id="selAmmo" style="font-size:12px;color:#aab;">6/6</span>
+      </div>
+    </div>
+    <div id="actionButtons">
+      <button class="actionBtn disabled" data-action="move">Move<span class="apCost">1 AP</span></button>
+      <button class="actionBtn disabled" data-action="shoot">Shoot<span class="apCost">1 AP</span></button>
+      <button class="actionBtn disabled" data-action="overwatch">Overwatch<span class="apCost">1 AP</span></button>
+      <button class="actionBtn disabled" data-action="hunker">Hunker<span class="apCost">1 AP</span></button>
+      <button class="actionBtn disabled" data-action="grenade">Grenade<span class="apCost">2 AP</span></button>
+      <button class="actionBtn disabled" data-action="reload">Reload<span class="apCost">1 AP</span></button>
+    </div>
+    <button id="endTurnBtn">End Turn</button>
+  </div>
+</div>
+
+<div id="tooltip">
+  <div class="ttTitle"></div>
+  <div class="ttStat"></div>
+</div>
+
+<div id="loadingScreen">
+  <h1>XCOM 2</h1>
+  <p>Tactical Strategy Game</p>
+  <div id="loadingBar"><div class="fill"></div></div>
+</div>
+
+<div id="endScreen">
+  <h1 id="endTitle"></h1>
+  <p id="endMessage"></p>
+  <button onclick="location.reload()">Play Again</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ═══════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════
+const TILE_SIZE = 2;
+const MAP_W = 24;
+const MAP_H = 24;
+const MAX_AP = 2;
+const COVER_HALF = 20;
+const COVER_FULL = 40;
+
+const TILE_TYPES = {
+  EMPTY: 0, GRASS: 1, ROCK: 2, BUILDING: 3, WALL: 4,
+  COVER_HALF: 5, COVER_FULL: 6, WATER: 7, ROAD: 8, TREE: 9,
+};
+
+const UNIT_CLASSES = {
+  soldier:      { name:'Soldier',      hp:5, armor:1, aim:75, move:12, color:0x3366aa, skin:0xd4a574, weapon:'AR',     dmg:2, ammo:6 },
+  rifleman:     { name:'Rifleman',     hp:6, armor:1, aim:70, move:12, color:0x44aa44, skin:0xc49464, weapon:'Carbine', dmg:2, ammo:6 },
+  grenadier:    { name:'Grenadier',    hp:5, armor:2, aim:65, move:10, color:0xaa6633, skin:0xb48454, weapon:'Shotgun', dmg:3, ammo:4 },
+  sniper:       { name:'Sniper',       hp:4, armor:1, aim:80, move:10, color:0x6633aa, skin:0xd4a574, weapon:'Sniper',  dmg:3, ammo:4 },
+  sectoid:      { name:'Sectoid',      hp:4, armor:0, aim:60, move:10, color:0x66aa66, skin:0x88cc88, weapon:'Psionic', dmg:2, ammo:99 },
+  adventSoldier:{ name:'Advent Soldier',hp:5, armor:1, aim:70, move:12, color:0xcc4444, skin:0xd4a574, weapon:'Plasma',  dmg:2, ammo:6 },
+  viper:        { name:'Viper',        hp:4, armor:0, aim:65, move:14, color:0x884488, skin:0xaa66aa, weapon:'Venom',   dmg:2, ammo:99 },
+};
+
+// ═══════════════════════════════════════════════════════════
+// GAME STATE
+// ═══════════════════════════════════════════════════════════
+const G = {
+  scene: null, camera: null, renderer: null, raycaster: null, mouse: null,
+  grid: [], units: [], selectedUnit: null,
+  currentUnitIndex: 0, turnOrder: [],
+  turnPhase: 'player', turnNumber: 1, gameOver: false,
+  camPan: new THREE.Vector3(24, 0, 24),
+  camTarget: new THREE.Vector3(24, 0, 24),
+  camDistance: 32, camPitch: 0.9, camYaw: Math.PI * 0.25,
+  moveMode: false, shootMode: false, grenadeMode: false,
+  moveHighlight: [], shootHighlight: [],
+  hoveredTile: null, hoveredUnit: null,
+  fogTiles: new Map(),
+  animQueue: [], messages: [],
+  clock: new THREE.Clock(),
+};
+
+// ═══════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════
+function dist(a, b) { return Math.sqrt((a.x-b.x)**2 + (a.z-b.z)**2); }
+function tileKey(x, y) { return x + ',' + y; }
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+function rand(a, b) { return a + Math.random() * (b - a); }
+function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+function dice(s) { return randInt(1, s); }
+
+function addMessage(text, type) {
+  type = type || 'info';
+  const log = document.getElementById('messageLog');
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  if (log.children.length > 50) log.removeChild(log.firstChild);
+}
+
+// ═══════════════════════════════════════════════════════════
+// THREE.JS INIT
+// ═══════════════════════════════════════════════════════════
+function initThree() {
+  const canvas = document.getElementById('gameCanvas');
+  G.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  G.renderer.setSize(window.innerWidth, window.innerHeight);
+  G.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  G.renderer.shadowMap.enabled = true;
+  G.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  G.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  G.renderer.toneMappingExposure = 1.0;
+  G.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  G.scene = new THREE.Scene();
+  G.scene.background = new THREE.Color(0x111822);
+  G.scene.fog = new THREE.FogExp2(0x111822, 0.008);
+
+  G.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 300);
+  updateCameraPosition();
+
+  G.raycaster = new THREE.Raycaster();
+  G.mouse = new THREE.Vector2();
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0x4466aa, 0.8);
+  G.scene.add(ambient);
+
+  const dir = new THREE.DirectionalLight(0xffeedd, 1.5);
+  dir.position.set(30, 40, 20);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(2048, 2048);
+  dir.shadow.camera.left = -40;
+  dir.shadow.camera.right = 40;
+  dir.shadow.camera.top = 40;
+  dir.shadow.camera.bottom = -40;
+  dir.shadow.camera.far = 120;
+  dir.shadow.bias = -0.001;
+  G.scene.add(dir);
+
+  const hemi = new THREE.HemisphereLight(0x6688cc, 0x223322, 0.5);
+  G.scene.add(hemi);
+
+  // Sky dome
+  const skyGeo = new THREE.SphereGeometry(120, 32, 32);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      topColor: { value: new THREE.Color(0x0a1020) },
+      bottomColor: { value: new THREE.Color(0x1a2030) },
+    },
+    vertexShader: `varying vec3 vWorldPos;
+      void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vWorldPos;
+      void main(){ float h = normalize(vWorldPos).y * 0.5 + 0.5;
+      gl_FragColor = vec4(mix(bottomColor, topColor, h), 1.0); }`
+  });
+  G.scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+  window.addEventListener('resize', () => {
+    G.camera.aspect = window.innerWidth / window.innerHeight;
+    G.camera.updateProjectionMatrix();
+    G.renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+function updateCameraPosition() {
+  G.camera.position.set(
+    G.camPan.x + G.camDistance * Math.sin(G.camYaw) * Math.cos(G.camPitch),
+    G.camPan.y + G.camDistance * Math.sin(G.camPitch),
+    G.camPan.z + G.camDistance * Math.cos(G.camYaw) * Math.cos(G.camPitch)
+  );
+  G.camera.lookAt(G.camPan.x, G.camPan.y, G.camPan.z);
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAP GENERATION
+// ═══════════════════════════════════════════════════════════
+function generateMap() {
+  G.grid = [];
+  for (let y = 0; y < MAP_H; y++) {
+    G.grid[y] = [];
+    for (let x = 0; x < MAP_W; x++) {
+      G.grid[y][x] = {
+        type: TILE_TYPES.GRASS, cover: 0, coverType: 0,
+        destructible: false, height: 0, mesh: null, unit: null,
+      };
+    }
+  }
+
+  const seed = Math.random() * 1000;
+
+  // Terrain features
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const rockNoise = Math.sin(x * 0.4 + 1.2) * Math.cos(y * 0.3 + 0.8);
+      if (rockNoise > 0.6 && x > 2 && x < MAP_W-2 && y > 2 && y < MAP_H-2) {
+        G.grid[y][x].type = TILE_TYPES.ROCK;
+        G.grid[y][x].height = 0.3;
+      }
+
+      const treeNoise = Math.sin(x * 0.2 + 3.1) * Math.cos(y * 0.25 + 2.4);
+      if (treeNoise > 0.5 && x > 3 && x < MAP_W-3 && y > 3 && y < MAP_H-3) {
+        if (dice(100) < 35) G.grid[y][x].type = TILE_TYPES.TREE;
+      }
+
+      const waterNoise = Math.sin(x * 0.15 + 0.5) * Math.cos(y * 0.2 + 1.1);
+      if (waterNoise > 0.75) G.grid[y][x].type = TILE_TYPES.WATER;
+
+      const roadNoise = Math.sin(x * 0.1 + y * 0.05) * 0.5 + 0.5;
+      if (roadNoise > 0.65 && x > 2 && x < MAP_W-2 && y > 2 && y < MAP_H-2) {
+        G.grid[y][x].type = TILE_TYPES.ROAD;
+      }
+    }
+  }
+
+  // Buildings
+  const buildings = [
+    { x:4, y:4, w:4, h:3 }, { x:16, y:3, w:3, h:4 },
+    { x:8, y:10, w:3, h:3 }, { x:18, y:15, w:4, h:3 },
+    { x:3, y:18, w:3, h:3 }, { x:14, y:18, w:3, h:3 },
+  ];
+  for (const b of buildings) {
+    for (let dy = 0; dy < b.h; dy++) {
+      for (let dx = 0; dx < b.w; dx++) {
+        const tx = b.x + dx, ty = b.y + dy;
+        if (tx >= 0 && tx < MAP_W && ty >= 0 && ty < MAP_H) {
+          const isEdge = dx === 0 || dx === b.w-1 || dy === 0 || dy === b.h-1;
+          G.grid[ty][tx].type = isEdge ? TILE_TYPES.WALL : TILE_TYPES.BUILDING;
+          G.grid[ty][tx].height = isEdge ? 3 : 2.5;
+          G.grid[ty][tx].destructible = isEdge;
+        }
+      }
+    }
+  }
+
+  // Cover objects
+  const covers = [
+    { x:7, y:7, t:TILE_TYPES.COVER_HALF }, { x:10, y:5, t:TILE_TYPES.COVER_HALF },
+    { x:13, y:8, t:TILE_TYPES.COVER_HALF }, { x:6, y:12, t:TILE_TYPES.COVER_HALF },
+    { x:15, y:6, t:TILE_TYPES.COVER_HALF }, { x:11, y:14, t:TILE_TYPES.COVER_HALF },
+    { x:19, y:10, t:TILE_TYPES.COVER_HALF }, { x:8, y:16, t:TILE_TYPES.COVER_HALF },
+    { x:16, y:14, t:TILE_TYPES.COVER_HALF }, { x:20, y:17, t:TILE_TYPES.COVER_HALF },
+    { x:5, y:20, t:TILE_TYPES.COVER_HALF }, { x:12, y:20, t:TILE_TYPES.COVER_HALF },
+    { x:21, y:21, t:TILE_TYPES.COVER_HALF },
+    { x:9, y:9, t:TILE_TYPES.COVER_FULL }, { x:14, y:12, t:TILE_TYPES.COVER_FULL },
+    { x:18, y:8, t:TILE_TYPES.COVER_FULL }, { x:7, y:15, t:TILE_TYPES.COVER_FULL },
+    { x:17, y:17, t:TILE_TYPES.COVER_FULL }, { x:10, y:18, t:TILE_TYPES.COVER_FULL },
+    { x:21, y:13, t:TILE_TYPES.COVER_FULL },
+  ];
+  for (const c of covers) {
+    if (c.x >= 0 && c.x < MAP_W && c.y >= 0 && c.y < MAP_H) {
+      G.grid[c.y][c.x].type = c.t;
+      G.grid[c.y][c.x].cover = c.t === TILE_TYPES.COVER_FULL ? COVER_FULL : COVER_HALF;
+    }
+  }
+
+  buildMapMeshes();
+}
+
+function buildMapMeshes() {
+  const geoCache = {};
+  function getGeo(key, fn) {
+    if (!geoCache[key]) geoCache[key] = fn();
+    return geoCache[key];
+  }
+
+  // Ground plane
+  const groundGeo = new THREE.PlaneGeometry(MAP_W * TILE_SIZE + 10, MAP_H * TILE_SIZE + 10);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a3a2a, roughness: 0.95 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(MAP_W * TILE_SIZE / 2, -0.01, MAP_H * TILE_SIZE / 2);
+  ground.receiveShadow = true;
+  G.scene.add(ground);
+
+  // Grid helper
+  const gridH = new THREE.GridHelper(Math.max(MAP_W, MAP_H) * TILE_SIZE, Math.max(MAP_W, MAP_H), 0x1a2a1a, 0x1a2a1a);
+  gridH.position.set(MAP_W * TILE_SIZE / 2, 0.01, MAP_H * TILE_SIZE / 2);
+  G.scene.add(gridH);
+
+  // Tile materials cache
+  const matCache = {};
+  function getMat(color, opts) {
+    const key = JSON.stringify({ color, opts: opts || '' });
+    if (!matCache[key]) {
+      matCache[key] = new THREE.MeshStandardMaterial(Object.assign({ color }, opts || {}));
+    }
+    return matCache[key];
+  }
+
+  // Tile geometries
+  const tileGeos = {
+    [TILE_TYPES.GRASS]:     new THREE.BoxGeometry(TILE_SIZE, 0.1, TILE_SIZE),
+    [TILE_TYPES.ROCK]:      new THREE.BoxGeometry(TILE_SIZE, 0.3, TILE_SIZE),
+    [TILE_TYPES.BUILDING]:  new THREE.BoxGeometry(TILE_SIZE, 2.5, TILE_SIZE),
+    [TILE_TYPES.WALL]:      new THREE.BoxGeometry(TILE_SIZE, 3, TILE_SIZE),
+    [TILE_TYPES.COVER_HALF]:new THREE.BoxGeometry(TILE_SIZE * 0.8, 0.8, TILE_SIZE * 0.4),
+    [TILE_TYPES.COVER_FULL]:new THREE.BoxGeometry(TILE_SIZE * 0.8, 1.2, TILE_SIZE * 0.8),
+    [TILE_TYPES.WATER]:     new THREE.BoxGeometry(TILE_SIZE, 0.05, TILE_SIZE),
+    [TILE_TYPES.ROAD]:      new THREE.BoxGeometry(TILE_SIZE, 0.05, TILE_SIZE),
+    [TILE_TYPES.TREE]:      new THREE.BoxGeometry(TILE_SIZE, 0.1, TILE_SIZE),
+  };
+
+  const tileColors = {
+    [TILE_TYPES.GRASS]: 0x3a5a3a,
+    [TILE_TYPES.ROCK]: 0x555555,
+    [TILE_TYPES.BUILDING]: 0x444455,
+    [TILE_TYPES.WALL]: 0x3a3a4a,
+    [TILE_TYPES.COVER_HALF]: 0x5a4a3a,
+    [TILE_TYPES.COVER_FULL]: 0x4a5a4a,
+    [TILE_TYPES.WATER]: 0x224466,
+    [TILE_TYPES.ROAD]: 0x3a3a3a,
+    [TILE_TYPES.TREE]: 0x3a5a3a,
+  };
+
+  // Build tile meshes
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const tile = G.grid[y][x];
+      const geo = tileGeos[tile.type];
+      if (!geo) continue;
+
+      const isWater = tile.type === TILE_TYPES.WATER;
+      const mat = new THREE.MeshStandardMaterial({
+        color: tileColors[tile.type],
+        roughness: isWater ? 0.3 : 0.9,
+        metalness: isWater ? 0.5 : 0.1,
+        transparent: isWater,
+        opacity: isWater ? 0.7 : 1.0,
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(
+        x * TILE_SIZE + TILE_SIZE / 2,
+        tile.height + (isWater ? -0.1 : 0.05),
+        y * TILE_SIZE + TILE_SIZE / 2
+      );
+      mesh.receiveShadow = true;
+      mesh.castShadow = tile.height > 0.1;
+      mesh.userData = { tileX: x, tileY: y };
+      G.scene.add(mesh);
+      tile.mesh = mesh;
+
+      // Trees
+      if (tile.type === TILE_TYPES.TREE) {
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.15, 0.2, 2, 6),
+          new THREE.MeshStandardMaterial({ color: 0x5a3a2a })
+        );
+        trunk.position.set(x * TILE_SIZE + TILE_SIZE / 2, 1, y * TILE_SIZE + TILE_SIZE / 2);
+        trunk.castShadow = true;
+        G.scene.add(trunk);
+
+        const foliage = new THREE.Mesh(
+          new THREE.SphereGeometry(1, 8, 6),
+          new THREE.MeshStandardMaterial({ color: 0x2a5a2a, roughness: 0.9 })
+        );
+        foliage.position.set(x * TILE_SIZE + TILE_SIZE / 2, 2.5, y * TILE_SIZE + TILE_SIZE / 2);
+        foliage.castShadow = true;
+        G.scene.add(foliage);
+      }
+
+      // Rocks
+      if (tile.type === TILE_TYPES.ROCK) {
+        const rock = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(0.6, 0),
+          new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.8 })
+        );
+        rock.position.set(x * TILE_SIZE + TILE_SIZE / 2, 0.3, y * TILE_SIZE + TILE_SIZE / 2);
+        rock.rotation.set(Math.random(), Math.random(), Math.random());
+        rock.castShadow = true;
+        G.scene.add(rock);
+      }
+    }
+  }
+
+  G.camPan.set(MAP_W * TILE_SIZE / 2, 0, MAP_H * TILE_SIZE / 2);
+  updateCameraPosition();
+}
+
+// ═══════════════════════════════════════════════════════════
+// UNIT MODELS
+// ═══════════════════════════════════════════════════════════
+function createUnitMesh(classKey, team) {
+  const cls = UNIT_CLASSES[classKey];
+  const group = new THREE.Group();
+
+  // Body
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.35, 0.9, 8),
+    new THREE.MeshStandardMaterial({ color: cls.color, roughness: 0.7 })
+  );
+  body.position.y = 0.85;
+  body.castShadow = true;
+  group.add(body);
+
+  // Head
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 8, 8),
+    new THREE.MeshStandardMaterial({ color: cls.skin, roughness: 0.6 })
+  );
+  head.position.y = 1.55;
+  head.castShadow = true;
+  group.add(head);
+
+  // Helmet for players
+  if (team === 'player') {
+    const helmet = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x222233, roughness: 0.5 })
+    );
+    helmet.position.y = 1.6;
+    group.add(helmet);
+  }
+
+  // Legs
+  const legGeo = new THREE.CylinderGeometry(0.1, 0.12, 0.5, 6);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+  for (const lx of [-0.12, 0.12]) {
+    const leg = new THREE.Mesh(legGeo, legMat);
+    leg.position.set(lx, 0.25, 0);
+    leg.castShadow = true;
+    group.add(leg);
+  }
+
+  // Weapon
+  const weapon = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.08, 0.6),
+    new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 })
+  );
+  weapon.position.set(0.3, 0.9, -0.2);
+  weapon.rotation.x = -0.2;
+  group.add(weapon);
+
+  // Team ring
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.4, 0.45, 16),
+    new THREE.MeshBasicMaterial({ color: team === 'player' ? 0x00aaff : 0xff4444, side: THREE.DoubleSide, transparent: true, opacity: 0.6 })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  group.add(ring);
+
+  // Selection ring (hidden)
+  const selRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.5, 0.55, 24),
+    new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+  );
+  selRing.rotation.x = -Math.PI / 2;
+  selRing.position.y = 0.02;
+  selRing.visible = false;
+  selRing.userData.isSelectionRing = true;
+  group.add(selRing);
+
+  return group;
+}
+
+function createHealthBar(unit) {
+  const group = new THREE.Group();
+
+  // BG
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.2, 0.12),
+    new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide })
+  );
+  group.add(bg);
+
+  // Fill
+  const fill = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.18, 0.08),
+    new THREE.MeshBasicMaterial({ color: 0x44cc44, side: THREE.DoubleSide })
+  );
+  fill.position.z = 0.001;
+  fill.position.x = -0.59;
+  group.add(fill);
+
+  // Border
+  const border = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.22, 0.14),
+    new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, transparent: true, opacity: 0.5 })
+  );
+  border.position.z = -0.001;
+  group.add(border);
+
+  group.position.y = 2.0;
+  group.userData.isHealthBar = true;
+  unit.healthBar = group;
+  unit.healthBarFill = fill;
+  unit.healthBarFillMat = fill.material;
+  unit.mesh.add(group);
+}
+
+function updateHealthBar(unit) {
+  if (!unit.healthBarFill) return;
+  const ratio = Math.max(0.01, unit.hp / unit.maxHp);
+  unit.healthBarFill.scale.x = ratio;
+  unit.healthBarFill.position.x = -0.59 + 0.59 * ratio;
+
+  if (ratio > 0.5) unit.healthBarFillMat.color.setHex(0x44cc44);
+  else if (ratio > 0.25) unit.healthBarFillMat.color.setHex(0xffaa00);
+  else unit.healthBarFillMat.color.setHex(0xff4444);
+}
+
+// ═══════════════════════════════════════════════════════════
+// UNIT CREATION
+// ═══════════════════════════════════════════════════════════
+let unitCounter = 0;
+
+function createUnit(classKey, team, x, y, name) {
+  const cls = UNIT_CLASSES[classKey];
+  const mesh = createUnitMesh(classKey, team);
+
+  const tile = G.grid[y][x];
+  mesh.position.set(x * TILE_SIZE + TILE_SIZE / 2, tile.height, y * TILE_SIZE + TILE_SIZE / 2);
+  G.scene.add(mesh);
+
+  const unit = {
+    id: 'unit_' + unitCounter++,
+    name: name || cls.name + '_' + unitCounter,
+    classKey, team,
+    hp: cls.hp, maxHp: cls.hp,
+    armor: cls.armor, aim: cls.aim,
+    moveRange: cls.move,
+    weapon: cls.weapon, damage: cls.dmg,
+    maxAmmo: cls.ammo, ammo: cls.ammo,
+    ap: MAX_AP, maxAp: MAX_AP,
+    alive: true, inCover: false, coverBonus: 0,
+    overwatch: false, hunker: false,
+    tileX: x, tileY: y,
+    mesh, healthBar: null, healthBarFill: null, healthBarFillMat: null,
+    path: [], xp: 0,
+    initiative: dice(100),
+    hasShot: false, hasMoved: false,
+  };
+
+  createHealthBar(unit);
+  G.units.push(unit);
+  tile.unit = unit;
+  updateHealthBar(unit);
+  return unit;
+}
+
+function placeUnits() {
+  // XCOM squad
+  createUnit('soldier', 'player', 2, 11, 'Valkyr');
+  createUnit('rifleman', 'player', 2, 13, 'Tango');
+  createUnit('grenadier', 'player', 3, 12, 'Demolish');
+  createUnit('sniper', 'player', 3, 10, 'Spectre');
+
+  // Enemies in pods
+  createUnit('adventSoldier', 'enemy', 20, 11, 'Advent-Alpha');
+  createUnit('sectoid', 'enemy', 21, 10, 'Psi-Alpha');
+  createUnit('adventSoldier', 'enemy', 18, 14, 'Advent-Beta');
+  createUnit('viper', 'enemy', 19, 15, 'Viper-Gamma');
+  createUnit('sectoid', 'enemy', 21, 17, 'Psi-Beta');
+  createUnit('adventSoldier', 'enemy', 22, 16, 'Advent-Delta');
+  createUnit('viper', 'enemy', 15, 6, 'Viper-Delta');
+  createUnit('adventSoldier', 'enemy', 16, 5, 'Advent-Epsilon');
+}
+
+// ═══════════════════════════════════════════════════════════
+// FOG OF WAR
+// ═══════════════════════════════════════════════════════════
+function updateFogOfWar() {
+  G.fogTiles.clear();
+  const visionRange = 8;
+  for (const unit of G.units) {
+    if (!unit.alive) continue;
+    for (let dy = -visionRange; dy <= visionRange; dy++) {
+      for (let dx = -visionRange; dx <= visionRange; dx++) {
+        if (dx*dx + dy*dy > visionRange*visionRange) continue;
+        const nx = unit.tileX + dx, ny = unit.tileY + dy;
+        if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+
+        // Check LOS
+        let blocked = false;
+        const steps = Math.max(Math.abs(dx), Math.abs(dy));
+        if (steps > 0) {
+          for (let s = 0.5; s < steps; s += 0.5) {
+            const sx = Math.round(unit.tileX + dx * s / steps);
+            const sy = Math.round(unit.tileY + dy * s / steps);
+            if (sx >= 0 && sx < MAP_W && sy >= 0 && sy < MAP_H) {
+              const t = G.grid[sy][sx];
+              if (t.type === TILE_TYPES.WALL || t.type === TILE_TYPES.BUILDING) {
+                blocked = true; break;
+              }
+            }
+          }
+        }
+        if (!blocked) G.fogTiles.set(tileKey(nx, ny), true);
+      }
+    }
+  }
+}
+
+function isTileKnown(x, y) {
+  return G.fogTiles.has(tileKey(x, y));
+}
+
+// ═══════════════════════════════════════════════════════════
+// LINE OF SIGHT
+// ═══════════════════════════════════════════════════════════
+function hasLineOfSight(a, b) {
+  const dx = b.tileX - a.tileX;
+  const dy = b.tileY - a.tileY;
+  const steps = Math.max(Math.abs(dx), Math.abs(dy));
+  if (steps === 0) return true;
+  for (let s = 0.5; s < steps; s += 0.5) {
+    const sx = Math.round(a.tileX + dx * s / steps);
+    const sy = Math.round(a.tileY + dy * s / steps);
+    if (sx >= 0 && sx < MAP_W && sy >= 0 && sy < MAP_H) {
+      const t = G.grid[sy][sx];
+      if (t.type === TILE_TYPES.WALL || t.type === TILE_TYPES.BUILDING) return false;
+    }
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════
+// MOVEMENT & PATHFINDING
+// ═══════════════════════════════════════════════════════════
+function getReachableTiles(unit) {
+  const reachable = new Set();
+  const range = Math.floor(unit.moveRange / TILE_SIZE);
+  const startKey = tileKey(unit.tileX, unit.tileY);
+  reachable.add(startKey);
+  const queue = [{ x: unit.tileX, y: unit.tileY, d: 0 }];
+  const visited = new Set([startKey]);
+
+  while (queue.length > 0) {
+    const curr = queue.shift();
+    if (curr.d >= range) continue;
+    for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const nx = curr.x + dx, ny = curr.y + dy;
+      const key = tileKey(nx, ny);
+      if (visited.has(key)) continue;
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const tile = G.grid[ny][nx];
+      if (tile.type === TILE_TYPES.WATER) continue;
+      if (tile.type === TILE_TYPES.WALL || tile.type === TILE_TYPES.BUILDING) continue;
+      if (tile.unit && tile.unit !== unit) continue;
+      visited.add(key);
+      reachable.add(key);
+      queue.push({ x: nx, y: ny, d: curr.d + 1 });
+    }
+  }
+  return reachable;
+}
+
+function findPath(sx, sy, ex, ey) {
+  if (sx === ex && sy === ey) return [];
+  const queue = [{ x: sx, y: sy, path: [] }];
+  const visited = new Set([tileKey(sx, sy)]);
+  while (queue.length > 0) {
+    const curr = queue.shift();
+    if (curr.x === ex && curr.y === ey) return curr.path;
+    for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const nx = curr.x + dx, ny = curr.y + dy;
+      const key = tileKey(nx, ny);
+      if (visited.has(key)) continue;
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const tile = G.grid[ny][nx];
+      if (tile.type === TILE_TYPES.WATER) continue;
+      if (tile.type === TILE_TYPES.WALL || tile.type === TILE_TYPES.BUILDING) continue;
+      visited.add(key);
+      queue.push({ x: nx, y: ny, path: [...curr.path, { x: nx, y: ny }] });
+    }
+  }
+  return null;
+}
+
+function clearHighlights() {
+  G.moveHighlight.forEach(m => G.scene.remove(m));
+  G.shootHighlight.forEach(m => G.scene.remove(m));
+  G.moveHighlight = [];
+  G.shootHighlight = [];
+  G.moveMode = false;
+  G.shootMode = false;
+  G.grenadeMode = false;
+}
+
+function showMoveHighlights(unit) {
+  clearHighlights();
+  G.moveMode = true;
+  const reachable = getReachableTiles(unit);
+  for (const key of reachable) {
+    const [x, y] = key.split(',').map(Number);
+    if (x === unit.tileX && y === unit.tileY) continue;
+    const tile = G.grid[y][x];
+    const geo = new THREE.PlaneGeometry(TILE_SIZE * 0.9, TILE_SIZE * 0.9);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x00ff88, transparent: true, opacity: 0.25,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x * TILE_SIZE + TILE_SIZE / 2, tile.height + 0.05, y * TILE_SIZE + TILE_SIZE / 2);
+    mesh.userData = { moveTarget: { x, y } };
+    G.scene.add(mesh);
+    G.moveHighlight.push(mesh);
+  }
+}
+
+function showShootHighlights(unit) {
+  clearHighlights();
+  G.shootMode = true;
+  const range = 10;
+  for (const enemy of G.units) {
+    if (enemy.team === unit.team || !enemy.alive) continue;
+    if (!hasLineOfSight(unit, enemy)) continue;
+    const d = dist({ x: unit.tileX, z: unit.tileY }, { x: enemy.tileX, z: enemy.tileY });
+    if (d <= range) {
+      const chance = calculateHitChance(unit, enemy);
+      const color = chance > 70 ? 0x44ff44 : chance > 40 ? 0xffaa00 : 0xff4444;
+      const geo = new THREE.RingGeometry(0.4, 0.6, 16);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(enemy.tileX * TILE_SIZE + TILE_SIZE / 2, 0.05, enemy.tileY * TILE_SIZE + TILE_SIZE / 2);
+      mesh.userData = { shootTarget: enemy, hitChance: chance };
+      G.scene.add(mesh);
+      G.shootHighlight.push(mesh);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMBAT
+// ═══════════════════════════════════════════════════════════
+function calculateHitChance(attacker, target) {
+  let chance = attacker.aim;
+  const tileDist = dist({ x: attacker.tileX, z: attacker.tileY }, { x: target.tileX, z: target.tileY });
+
+  // Distance modifier
+  if (tileDist > 50) chance *= 0.5;
+  else if (tileDist > 20) chance *= 0.75;
+  else if (tileDist > 10) chance *= 0.9;
+
+  // Cover
+  if (target.inCover) chance -= target.coverBonus;
+
+  // Hunker
+  if (target.hunker) chance += 20;
+
+  // Flanking
+  if (isFlanking(attacker, target)) chance += 15;
+
+  return clamp(chance, 5, 95);
+}
+
+function isFlanking(attacker, target) {
+  const dx = target.tileX - attacker.tileX;
+  const dy = target.tileY - attacker.tileY;
+  for (const ally of G.units) {
+    if (ally.team !== attacker.team || !ally.alive || ally.id === attacker.id) continue;
+    const adx = target.tileX - ally.tileX;
+    const ady = target.tileY - ally.tileY;
+    if (dx * adx + dy * ady < -5) return true;
+  }
+  return false;
+}
+
+function calculateDamage(attacker, target) {
+  let dmg = attacker.damage;
+  if (attacker.classKey === 'sniper' && dice(100) <= 15) {
+    dmg += 2;
+    addMessage(attacker.name + ' scores a headshot!', 'damage');
+  }
+  const reduction = target.armor * 0.5;
+  return Math.max(1, Math.round(dmg - reduction));
+}
+
+function performShoot(attacker, target) {
+  if (attacker.ap < 1 || attacker.ammo <= 0) return false;
+  attacker.ap -= 1;
+  attacker.ammo -= 1;
+  attacker.hasShot = true;
+
+  const chance = calculateHitChance(attacker, target);
+  const roll = dice(100);
+
+  if (roll <= chance) {
+    const dmg = calculateDamage(attacker, target);
+    target.hp = Math.max(0, target.hp - dmg);
+    addMessage(attacker.name + ' hits ' + target.name + ' for ' + dmg + ' damage (' + chance + '% hit)', 'damage');
+    flashUnit(target, 0xff0000, 200);
+    showDamageNumber(target, dmg);
+    if (target.hp <= 0) killUnit(target);
+  } else {
+    addMessage(attacker.name + ' misses ' + target.name + ' (' + roll + ' vs ' + chance + '%)', 'info');
+  }
+
+  if (roll <= chance) {
+    attacker.xp = (attacker.xp || 0) + 10;
+    if (roll > chance * 0.9) attacker.xp += 5;
+  }
+
+  updateHealthBar(target);
+  updateUI();
+  checkGameEnd();
+  return true;
+}
+
+function performMove(unit, tx, ty) {
+  if (unit.ap < 1) return false;
+  const path = findPath(unit.tileX, unit.tileY, tx, ty);
+  if (!path || path.length === 0) return false;
+
+  G.grid[unit.tileY][unit.tileX].unit = null;
+  unit.tileX = tx;
+  unit.tileY = ty;
+  unit.path = path;
+  unit.ap -= 1;
+  unit.hasMoved = true;
+
+  const tile = G.grid[ty][tx];
+  unit.mesh.position.set(tx * TILE_SIZE + TILE_SIZE / 2, tile.height, ty * TILE_SIZE + TILE_SIZE / 2);
+  tile.unit = unit;
+  updateCoverStatus(unit);
+  addMessage(unit.name + ' moves to (' + tx + ', ' + ty + ')', 'info');
+  updateUI();
+  return true;
+}
+
+function updateCoverStatus(unit) {
+  const tile = G.grid[unit.tileY][unit.tileX];
+  unit.inCover = tile.cover > 0;
+  unit.coverBonus = tile.cover;
+}
+
+function performHunker(unit) {
+  if (unit.ap < 1) return false;
+  unit.ap -= 1;
+  unit.hunker = true;
+  unit.coverBonus = 20;
+  unit.inCover = true;
+  addMessage(unit.name + ' hunkers down (+20% cover)', 'info');
+  updateUI();
+  advanceCurrentUnit();
+  return true;
+}
+
+function performOverwatch(unit) {
+  if (unit.ap < 1) return false;
+  unit.ap -= 1;
+  unit.overwatch = true;
+  addMessage(unit.name + ' sets up overwatch', 'info');
+  updateUI();
+  advanceCurrentUnit();
+  return true;
+}
+
+function performReload(unit) {
+  if (unit.ap < 1 || unit.ammo >= unit.maxAmmo) return false;
+  unit.ap -= 1;
+  unit.ammo = Math.min(unit.maxAmmo, unit.ammo + 2);
+  addMessage(unit.name + ' reloads (' + unit.ammo + '/' + unit.maxAmmo + ')', 'info');
+  updateUI();
+  advanceCurrentUnit();
+  return true;
+}
+
+function performGrenade(unit, target) {
+  if (unit.ap < 2 || unit.ammo < 1) return false;
+  unit.ap -= 2;
+  unit.ammo -= 1;
+  unit.hasShot = true;
+  const dmg = randInt(2, 4);
+  target.hp = Math.max(0, target.hp - dmg);
+  addMessage(unit.name + ' throws a grenade at ' + target.name + ' for ' + dmg + ' damage!', 'damage');
+  flashUnit(target, 0xff8800, 400);
+  showDamageNumber(target, dmg);
+  if (target.hp <= 0) killUnit(target);
+  updateHealthBar(target);
+  updateUI();
+  checkGameEnd();
+  return true;
+}
+
+function killUnit(unit) {
+  unit.alive = false;
+  unit.hp = 0;
+  unit.ap = 0;
+  unit.mesh.rotation.x = Math.PI / 2;
+  unit.mesh.position.y = 0.3;
+  addMessage(unit.name + ' has been eliminated!', 'kill');
+  checkGameEnd();
+}
+
+function flashUnit(unit, color, duration) {
+  unit.mesh.traverse(child => {
+    if (child.isMesh && child.material) {
+      child.material.emissive = new THREE.Color(color);
+      child.material.emissiveIntensity = 0.5;
+      setTimeout(() => {
+        if (child.material) {
+          child.material.emissive = new THREE.Color(0x000000);
+          child.material.emissiveIntensity = 0;
+        }
+      }, duration);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// DAMAGE NUMBERS
+// ═══════════════════════════════════════════════════════════
+function showDamageNumber(unit, dmg) {
+  const div = document.createElement('div');
+  div.className = 'dmgNum dmg';
+  div.textContent = '-' + dmg;
+  document.body.appendChild(div);
+
+  const pos = worldToScreen(unit.mesh.position);
+  if (pos) {
+    div.style.left = pos.x + 'px';
+    div.style.top = pos.y + 'px';
+  }
+
+  requestAnimationFrame(() => {
+    div.style.transform = 'translateY(-40px)';
+    div.style.opacity = '0';
+  });
+
+  setTimeout(() => div.remove(), 900);
+}
+
+function worldToScreen(worldPos) {
+  const v = worldPos.clone();
+  v.project(G.camera);
+  return {
+    x: (v.x * 0.5 + 0.5) * window.innerWidth,
+    y: (-v.y * 0.5 + 0.5) * window.innerHeight,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// TURN SYSTEM
+// ═══════════════════════════════════════════════════════════
+function buildTurnOrder() {
+  const alive = G.units.filter(u => u.alive);
+  for (const u of alive) {
+    u.initiative = dice(100);
+    u.ap = u.maxAp;
+    u.overwatch = false;
+    u.hunker = false;
+    u.hasShot = false;
+    u.hasMoved = false;
+  }
+  alive.sort((a, b) => b.initiative - a.initiative);
+  G.turnOrder = alive;
+}
+
+function getCurrentUnit() {
+  return G.turnOrder[G.currentUnitIndex] || null;
+}
+
+function advanceCurrentUnit() {
+  G.currentUnitIndex++;
+  if (G.currentUnitIndex >= G.turnOrder.length) {
+    endTurn();
+    return;
+  }
+  const unit = getCurrentUnit();
+  if (unit) selectUnit(unit);
+  updateUI();
+}
+
+function endTurn() {
+  if (G.turnPhase === 'player') {
+    G.turnPhase = 'enemy';
+    G.turnNumber++;
+    document.getElementById('turnPhase').textContent = 'Enemy Turn';
+    document.getElementById('turnPhase').className = 'enemy';
+    addMessage('--- Enemy Turn ' + G.turnNumber + ' ---', 'info');
+    setTimeout(runEnemyTurn, 500);
+  } else {
+    G.turnPhase = 'player';
+    G.turnNumber++;
+    document.getElementById('turnPhase').textContent = 'Player Turn';
+    document.getElementById('turnPhase').className = 'player';
+    document.getElementById('turnNumber').textContent = G.turnNumber;
+    addMessage('--- Turn ' + G.turnNumber + ' ---', 'info');
+    buildTurnOrder();
+    G.currentUnitIndex = 0;
+    updateFogOfWar();
+    const unit = getCurrentUnit();
+    if (unit && unit.team === 'player') selectUnit(unit);
+  }
+  updateUI();
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENEMY AI
+// ═══════════════════════════════════════════════════════════
+function runEnemyTurn() {
+  const enemies = G.turnOrder.filter(u => u.team === 'enemy' && u.alive);
+  let idx = 0;
+
+  function processNext() {
+    if (idx >= enemies.length || G.gameOver) {
+      setTimeout(() => endTurn(), 800);
+      return;
+    }
+    const enemy = enemies[idx];
+    idx++;
+    if (!enemy.alive) { processNext(); return; }
+
+    // Find nearest visible player
+    let nearest = null, nearestDist = Infinity;
+    for (const player of G.units) {
+      if (!player.alive || player.team !== 'player') continue;
+      if (!hasLineOfSight(enemy, player)) continue;
+      const d = dist({ x: enemy.tileX, z: enemy.tileY }, { x: player.tileX, z: player.tileY });
+      if (d < nearestDist) { nearestDist = d; nearest = player; }
+    }
+
+    if (!nearest) {
+      // Move forward randomly
+      const dirs = [[-1,0],[1,0],[0,-1]];
+      const reachable = getReachableTiles(enemy);
+      for (const d of dirs) {
+        const nx = enemy.tileX + d[0], ny = enemy.tileY + d[1];
+        if (reachable.has(tileKey(nx, ny))) {
+          performMove(enemy, nx, ny);
+          break;
+        }
+      }
+      setTimeout(processNext, 400);
+      return;
+    }
+
+    if (nearestDist <= 12 && enemy.ap >= 1) {
+      aiShoot(enemy, nearest);
+    } else if (nearestDist > 12 && enemy.ap >= 1) {
+      aiMoveToward(enemy, nearest);
+    }
+
+    setTimeout(processNext, 600);
+  }
+
+  processNext();
+}
+
+function aiShoot(enemy, target) {
+  if (!enemy.alive || !target.alive || enemy.ap < 1) return;
+  const chance = calculateHitChance(enemy, target);
+  const roll = dice(100);
+  if (roll <= chance) {
+    const dmg = calculateDamage(enemy, target);
+    target.hp = Math.max(0, target.hp - dmg);
+    addMessage(enemy.name + ' hits ' + target.name + ' for ' + dmg + ' damage!', 'damage');
+    flashUnit(target, 0xff0000, 200);
+    showDamageNumber(target, dmg);
+    if (target.hp <= 0) killUnit(target);
+  } else {
+    addMessage(enemy.name + ' misses ' + target.name + ' (' + roll + ' vs ' + chance + '%)', 'info');
+  }
+  enemy.ap -= 1;
+  updateHealthBar(target);
+  updateUI();
+}
+
+function aiMoveToward(enemy, target) {
+  const tx = target.tileX, ty = target.tileY;
+  const reachable = getReachableTiles(enemy);
+  let best = null, bestScore = -Infinity;
+
+  for (const key of reachable) {
+    const [x, y] = key.split(',').map(Number);
+    if (x === enemy.tileX && y === enemy.tileY) continue;
+    const d = dist({ x, z: y }, { x: tx, z: ty });
+    const coverBonus = G.grid[y][x].cover || 0;
+    const score = (20 - d) * 2 + coverBonus;
+    if (score > bestScore) { bestScore = score; best = { x, y }; }
+  }
+
+  if (best) {
+    performMove(enemy, best.x, best.y);
+    updateCoverStatus(enemy);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// GAME END
+// ═══════════════════════════════════════════════════════════
+function checkGameEnd() {
+  const playerAlive = G.units.filter(u => u.alive && u.team === 'player').length;
+  const enemyAlive = G.units.filter(u => u.alive && u.team === 'enemy').length;
+
+  if (enemyAlive === 0) {
+    G.gameOver = true;
+    G.turnPhase = 'victory';
+    showEndScreen(true);
+  } else if (playerAlive === 0) {
+    G.gameOver = true;
+    G.turnPhase = 'defeat';
+    showEndScreen(false);
+  }
+}
+
+function showEndScreen(victory) {
+  const screen = document.getElementById('endScreen');
+  const title = document.getElementById('endTitle');
+  const msg = document.getElementById('endMessage');
+  screen.style.display = 'flex';
+  title.textContent = victory ? 'MISSION COMPLETE' : 'MISSION FAILED';
+  title.className = victory ? 'victory' : 'defeat';
+  msg.textContent = victory
+    ? 'All hostiles eliminated in ' + G.turnNumber + ' turns. Well done, Commander.'
+    : 'Your squad has been wiped out on turn ' + G.turnNumber + '.';
+}
+
+// ═══════════════════════════════════════════════════════════
+// MINIMAP
+// ═══════════════════════════════════════════════════════════
+function renderMinimap() {
+  const canvas = document.getElementById('minimapCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const size = 160;
+  canvas.width = size;
+  canvas.height = size;
+
+  const cellSize = size / Math.max(MAP_W, MAP_H);
+  ctx.fillStyle = '#1a2a1a';
+  ctx.fillRect(0, 0, size, size);
+
+  const colors = {
+    [TILE_TYPES.GRASS]: '#2a4a2a', [TILE_TYPES.ROCK]: '#555555',
+    [TILE_TYPES.BUILDING]: '#444455', [TILE_TYPES.WALL]: '#3a3a4a',
+    [TILE_TYPES.COVER_HALF]: '#5a4a3a', [TILE_TYPES.COVER_FULL]: '#4a5a4a',
+    [TILE_TYPES.WATER]: '#224466', [TILE_TYPES.ROAD]: '#3a3a3a',
+    [TILE_TYPES.TREE]: '#2a5a2a',
+  };
+
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      ctx.fillStyle = colors[G.grid[y][x].type] || '#2a4a2a';
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize + 0.5, cellSize + 0.5);
+      if (!isTileKnown(x, y)) {
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize + 0.5, cellSize + 0.5);
+      }
+    }
+  }
+
+  for (const unit of G.units) {
+    if (!unit.alive) continue;
+    const px = unit.tileX * cellSize + cellSize / 2;
+    const py = unit.tileY * cellSize + cellSize / 2;
+    ctx.fillStyle = unit.team === 'player' ? '#00aaff' : '#ff4444';
+    ctx.beginPath();
+    ctx.arc(px, py, unit.team === 'player' ? 3 : 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    if (unit === G.selectedUnit) {
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// UI UPDATES
+// ═══════════════════════════════════════════════════════════
+function updateUI() {
+  document.getElementById('turnNumber').textContent = G.turnNumber;
+  document.getElementById('squadCount').textContent =
+    G.units.filter(u => u.alive && u.team === 'player').length + '/' + G.units.filter(u => u.team === 'player').length;
+  document.getElementById('enemyCount').textContent =
+    G.units.filter(u => u.alive && u.team === 'enemy').length;
+
+  updateRoster();
+  updateEnemyPanel();
+  updateTurnOrder();
+  updateActionPanel();
+}
+
+function updateRoster() {
+  const panel = document.getElementById('rosterPanel');
+  const title = panel.firstElementChild;
+  panel.innerHTML = '';
+  panel.appendChild(title);
+
+  for (const unit of G.units) {
+    if (unit.team !== 'player') continue;
+    const div = document.createElement('div');
+    div.className = 'rosterUnit' + (unit === G.selectedUnit ? ' selected' : '') + (!unit.alive ? ' dead' : '');
+    const ratio = unit.hp / unit.maxHp;
+    const hpClass = ratio > 0.5 ? '' : ratio > 0.25 ? 'med' : 'low';
+    div.innerHTML = '<div class="rName" style="color:#00d4ff">' + unit.name + '</div>' +
+      '<div class="rHP"><div class="fill ' + hpClass + '" style="width:' + (ratio*100) + '%"></div></div>' +
+      '<div class="rStatus">' + (unit.alive ? (unit.ap > 0 ? unit.ap + ' AP' : 'Exhausted') : 'KIA') + '</div>';
+    div.addEventListener('click', () => selectUnit(unit));
+    panel.appendChild(div);
+  }
+}
+
+function updateEnemyPanel() {
+  const panel = document.getElementById('enemyPanel');
+  const title = panel.firstElementChild;
+  panel.innerHTML = '';
+  panel.appendChild(title);
+
+  for (const unit of G.units) {
+    if (unit.team !== 'enemy' || !unit.alive) continue;
+    const div = document.createElement('div');
+    div.className = 'enemyUnit';
+    const ratio = unit.hp / unit.maxHp;
+    div.innerHTML = '<div class="eName">' + unit.name + '</div>' +
+      '<div class="eHP"><div class="fill" style="width:' + (ratio*100) + '%"></div></div>' +
+      '<div class="eStatus">' + (unit.inCover ? 'Cover +' + unit.coverBonus : '') + '</div>';
+    div.addEventListener('click', () => {
+      if (G.selectedUnit && G.selectedUnit.team === 'player' && G.selectedUnit.alive) {
+        selectUnit(unit);
+      }
+    });
+    panel.appendChild(div);
+  }
+}
+
+function updateTurnOrder() {
+  const panel = document.getElementById('turnOrder');
+  panel.innerHTML = '<div class="title">Initiative</div>';
+  for (let i = 0; i < G.turnOrder.length; i++) {
+    const unit = G.turnOrder[i];
+    if (!unit.alive) continue;
+    const div = document.createElement('div');
+    div.className = 'turnEntry' + (unit === getCurrentUnit() ? ' active' : '');
+    div.innerHTML = '<span class="dot ' + unit.team + '"></span>' + unit.name;
+    panel.appendChild(div);
+  }
+}
+
+function updateActionPanel() {
+  const unit = G.selectedUnit;
+  const nameEl = document.getElementById('selName');
+  const classEl = document.getElementById('selClass');
+  const hpBar = document.getElementById('selHP');
+  const hpText = document.getElementById('selHPText');
+  const apBar = document.getElementById('selAP');
+  const apText = document.getElementById('selAPText');
+  const xpBar = document.getElementById('selXP');
+  const ammoText = document.getElementById('selAmmo');
+  const btns = document.querySelectorAll('.actionBtn');
+
+  if (!unit || !unit.alive) {
+    nameEl.textContent = unit ? unit.name : 'No Unit Selected';
+    classEl.textContent = '';
+    hpBar.style.width = '0%'; hpText.textContent = '0/0';
+    apBar.style.width = '0%'; apText.textContent = '0/0';
+    xpBar.style.width = '0%'; ammoText.textContent = '--/--';
+    btns.forEach(b => b.classList.add('disabled'));
+    return;
+  }
+
+  nameEl.textContent = unit.name;
+  classEl.textContent = unit.classKey;
+
+  const hpRatio = unit.hp / unit.maxHp;
+  hpBar.style.width = (hpRatio * 100) + '%';
+  hpText.textContent = unit.hp + '/' + unit.maxHp;
+
+  const apRatio = unit.ap / unit.maxAp;
+  apBar.style.width = (apRatio * 100) + '%';
+  apText.textContent = unit.ap + '/' + unit.maxAp;
+
+  xpBar.style.width = Math.min(100, (unit.xp || 0) / 100 * 100) + '%';
+  ammoText.textContent = unit.ammo + '/' + unit.maxAmmo;
+
+  const isPlayerTurn = G.turnPhase === 'player';
+  const canAct = isPlayerTurn && unit.team === 'player' && unit.alive && unit.ap > 0;
+
+  btns.forEach(btn => {
+    const action = btn.dataset.action;
+    const apCost = action === 'grenade' ? 2 : 1;
+    btn.classList.toggle('disabled', !(canAct && unit.ap >= apCost));
+  });
+}
+
+function selectUnit(unit) {
+  // Hide previous selection ring
+  if (G.selectedUnit && G.selectedUnit.mesh) {
+    const prevRing = G.selectedUnit.mesh.children.find(c => c.userData && c.userData.isSelectionRing);
+    if (prevRing) prevRing.visible = false;
+  }
+
+  G.selectedUnit = unit;
+
+  // Show selection ring
+  if (unit.mesh) {
+    const selRing = unit.mesh.children.find(c => c.userData && c.userData.isSelectionRing);
+    if (selRing) selRing.visible = true;
+  }
+
+  clearHighlights();
+  updateUI();
+}
+
+// ═══════════════════════════════════════════════════════════
+// INPUT HANDLING
+// ═══════════════════════════════════════════════════════════
+let mouseDown = false;
+let lastMouse = { x: 0, y: 0 };
+
+function initInput() {
+  const canvas = document.getElementById('gameCanvas');
+
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mouseup', () => { mouseDown = false; });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('mousemove', e => {
+    if (mouseDown && e.button === 2) {
+      G.camPan.x += (e.clientX - lastMouse.x) * 0.05;
+      G.camPan.z -= (e.clientY - lastMouse.y) * 0.05;
+      updateCameraPosition();
+    }
+    lastMouse = { x: e.clientX, y: e.clientY };
+  });
+
+  canvas.addEventListener('wheel', e => {
+    G.camDistance = clamp(G.camDistance + e.deltaY * 0.02, 10, 60);
+    updateCameraPosition();
+  });
+
+  document.addEventListener('keydown', onKeyDown);
+
+  document.querySelectorAll('.actionBtn').forEach(btn => {
+    btn.addEventListener('click', onActionClick);
+  });
+
+  document.getElementById('endTurnBtn').addEventListener('click', () => {
+    if (G.turnPhase === 'player') advanceCurrentUnit();
+  });
+}
+
+function getRayIntersection(event) {
+  const rect = canvas.getBoundingClientRect();
+  G.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  G.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  G.raycaster.setFromCamera(G.mouse, G.camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const target = new THREE.Vector3();
+  G.raycaster.ray.intersectPlane(plane, target);
+  return target;
+}
+
+function screenToTile(screenPos) {
+  if (!screenPos) return null;
+  const tx = Math.floor(screenPos.x / TILE_SIZE);
+  const ty = Math.floor(screenPos.z / TILE_SIZE);
+  if (tx < 0 || tx >= MAP_W || ty < 0 || ty >= MAP_H) return null;
+  return { x: tx, y: ty };
+}
+
+function onMouseMove(event) {
+  const target = getRayIntersection(event);
+  if (!target) return;
+
+  const tile = screenToTile(target);
+  G.hoveredTile = tile;
+
+  // Highlight hovered tile
+  if (G.hoveredTile) {
+    const ht = G.grid[G.hoveredTile.y][G.hoveredTile.x];
+    if (ht && ht.mesh && ht.mesh.material) {
+      ht.mesh.material.emissive = new THREE.Color(0x222222);
+      ht.mesh.material.emissiveIntensity = 0.3;
+    }
+  }
+
+  // Check hovered unit
+  G.hoveredUnit = null;
+  for (const unit of G.units) {
+    if (!unit.alive) continue;
+    const ud = dist({ x: unit.mesh.position.x, z: unit.mesh.position.z }, { x: target.x, z: target.z });
+    if (ud < 1.5) { G.hoveredUnit = unit; break; }
+  }
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  if (G.hoveredUnit) {
+    const u = G.hoveredUnit;
+    tooltip.querySelector('.ttTitle').textContent = u.name;
+    const chance = G.selectedUnit && G.selectedUnit.team !== u.team
+      ? calculateHitChance(G.selectedUnit, u) : 0;
+    tooltip.querySelector('.ttStat').textContent =
+      'HP: ' + u.hp + '/' + u.maxHp + ' | ' + u.weapon +
+      (u.inCover ? ' | Cover +' + u.coverBonus : '') +
+      (chance ? ' | Hit: ' + chance + '%' : '');
+    tooltip.style.display = 'block';
+    tooltip.style.left = (event.clientX + 12) + 'px';
+    tooltip.style.top = (event.clientY + 12) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+function onMouseDown(event) {
+  if (event.button === 2) {
+    mouseDown = true;
+    lastMouse = { x: event.clientX, y: event.clientY };
+    return;
+  }
+  if (event.button !== 0) return;
+
+  const target = getRayIntersection(event);
+  if (!target) return;
+
+  const tile = screenToTile(target);
+  if (!tile) return;
+
+  // Check clicked unit
+  let clickedUnit = null;
+  for (const unit of G.units) {
+    if (!unit.alive) continue;
+    const ud = dist({ x: unit.mesh.position.x, z: unit.mesh.position.z }, { x: target.x, z: target.z });
+    if (ud < 1.5) { clickedUnit = unit; break; }
+  }
+
+  // Move mode
+  if (G.moveMode && G.selectedUnit && G.selectedUnit.alive) {
+    const reachable = getReachableTiles(G.selectedUnit);
+    if (reachable.has(tileKey(tile.x, tile.y))) {
+      performMove(G.selectedUnit, tile.x, tile.y);
+      clearHighlights();
+      return;
+    }
+  }
+
+  // Shoot mode - check highlighted targets first
+  if (G.shootMode && G.selectedUnit && G.selectedUnit.alive) {
+    for (const mesh of G.shootHighlight) {
+      if (mesh.userData.shootTarget) {
+        const tgt = mesh.userData.shootTarget;
+        if (G.grenadeMode) performGrenade(G.selectedUnit, tgt);
+        else performShoot(G.selectedUnit, tgt);
+        clearHighlights();
+        return;
+      }
+    }
+    // Clicked on enemy unit directly
+    if (clickedUnit && clickedUnit.team !== G.selectedUnit.team) {
+      if (G.grenadeMode) performGrenade(G.selectedUnit, clickedUnit);
+      else performShoot(G.selectedUnit, clickedUnit);
+      clearHighlights();
+      return;
+    }
+  }
+
+  // Select unit
+  if (clickedUnit) selectUnit(clickedUnit);
+}
+
+function onKeyDown(event) {
+  const panSpeed = 1.5;
+  switch (event.key.toLowerCase()) {
+    case 'w': case 'arrowup': G.camPan.z -= panSpeed; updateCameraPosition(); break;
+    case 's': case 'arrowdown': G.camPan.z += panSpeed; updateCameraPosition(); break;
+    case 'a': case 'arrowleft': G.camPan.x -= panSpeed; updateCameraPosition(); break;
+    case 'd': case 'arrowright': G.camPan.x += panSpeed; updateCameraPosition(); break;
+    case 'q': G.camYaw -= 0.1; updateCameraPosition(); break;
+    case 'e': G.camYaw += 0.1; updateCameraPosition(); break;
+    case 'r': G.camPitch = clamp(G.camPitch + 0.05, 0.2, 1.4); updateCameraPosition(); break;
+    case 'f': G.camPitch = clamp(G.camPitch - 0.05, 0.2, 1.4); updateCameraPosition(); break;
+    case 'escape': clearHighlights(); break;
+    case ' ':
+      event.preventDefault();
+      if (G.turnPhase === 'player') advanceCurrentUnit();
+      break;
+  }
+}
+
+function onActionClick(event) {
+  const btn = event.target.closest('.actionBtn');
+  if (!btn || btn.classList.contains('disabled')) return;
+
+  const action = btn.dataset.action;
+  const unit = G.selectedUnit;
+  if (!unit || !unit.alive || unit.ap < 1) return;
+
+  switch (action) {
+    case 'move':
+      if (G.moveMode) clearHighlights();
+      else showMoveHighlights(unit);
+      break;
+    case 'shoot':
+      G.grenadeMode = false;
+      if (G.shootMode) clearHighlights();
+      else showShootHighlights(unit);
+      break;
+    case 'overwatch': performOverwatch(unit); break;
+    case 'hunker': performHunker(unit); break;
+    case 'grenade':
+      G.grenadeMode = true;
+      addMessage('Select a target for grenade', 'info');
+      showShootHighlights(unit);
+      break;
+    case 'reload': performReload(unit); break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate);
+
+  const time = G.clock.getElapsedTime();
+
+  // Animate units
+  for (const unit of G.units) {
+    if (!unit.alive) continue;
+
+    // Health bar billboarding
+    if (unit.healthBar) unit.healthBar.lookAt(G.camera.position);
+
+    // Idle breathing
+    if (unit.mesh) {
+      unit.mesh.position.y += Math.sin(time * 2 + unit.tileX) * 0.0003;
+
+      // Selection ring pulse
+      const selRing = unit.mesh.children.find(c => c.userData && c.userData.isSelectionRing);
+      if (selRing && selRing.visible) {
+        selRing.material.opacity = 0.5 + Math.sin(time * 4) * 0.3;
+        const s = 1 + Math.sin(time * 3) * 0.1;
+        selRing.scale.set(s, s, s);
+      }
+    }
+  }
+
+  // Animate highlights
+  for (const mesh of G.moveHighlight) {
+    mesh.material.opacity = 0.15 + Math.sin(time * 3) * 0.1;
+  }
+  for (const mesh of G.shootHighlight) {
+    mesh.material.opacity = 0.3 + Math.sin(time * 4) * 0.2;
+  }
+
+  // Minimap
+  renderMinimap();
+
+  G.renderer.render(G.scene, G.camera);
+}
+
+// ═══════════════════════════════════════════════════════════
+// GAME INITIALIZATION
+// ═══════════════════════════════════════════════════════════
+function initGame() {
+  // Loading animation
+  const loadingBar = document.querySelector('#loadingBar .fill');
+  let progress = 0;
+
+  function loadStep() {
+    progress += Math.random() * 25 + 10;
+    if (progress > 100) progress = 100;
+    loadingBar.style.width = progress + '%';
+    if (progress < 100) {
+      setTimeout(loadStep, 150);
+    } else {
+      setTimeout(() => {
+        document.getElementById('loadingScreen').style.display = 'none';
+        startGame();
+      }, 400);
+    }
+  }
+  loadStep();
+}
+
+function startGame() {
+  initThree();
+  generateMap();
+  placeUnits();
+  buildTurnOrder();
+
+  const firstPlayer = G.units.find(u => u.team === 'player');
+  if (firstPlayer) selectUnit(firstPlayer);
+
+  initInput();
+  updateUI();
+  updateFogOfWar();
+
+  addMessage('Mission started. Eliminate all hostile aliens.', 'info');
+  addMessage('Select a soldier and issue commands.', 'info');
+
+  animate();
+}
+
+// Start
+const canvas = document.getElementById('gameCanvas');
+initGame();
+
+</script>
+</body>
+</html>

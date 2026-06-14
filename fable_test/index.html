@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TACTICAL // XCOM-style squad combat in Three.js</title>
+<style>
+  :root {
+    --cy: #49e0ff; --cy-dim: #1d8aa6; --bg: rgba(9, 13, 18, 0.86);
+    --edge: rgba(73, 224, 255, 0.25); --red: #ff5340; --yellow: #eec43d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #07090c; }
+  body { font: 13px/1.45 'Segoe UI', system-ui, sans-serif; color: #cfe3ee; }
+  #app, #app canvas { position: fixed; inset: 0; }
+
+  .panel-edge { background: var(--bg); border: 1px solid var(--edge); border-radius: 4px; }
+
+  /* top bar */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center;
+    gap: 16px; padding: 8px 14px; background: linear-gradient(rgba(7,10,14,.92), rgba(7,10,14,.55) 80%, transparent);
+    pointer-events: none; z-index: 10;
+  }
+  #topbar > * { pointer-events: auto; }
+  #mission { color: var(--cy); font-weight: 700; letter-spacing: 2px; font-size: 14px; }
+  #objective { color: #9fb4c2; }
+  #turninfo { margin-left: auto; font-weight: 700; letter-spacing: 1.5px; color: var(--cy); }
+  #turninfo.alien { color: var(--red); }
+  #topbar .sysbtn {
+    background: none; border: 1px solid var(--edge); color: #cfe3ee; border-radius: 4px;
+    padding: 4px 9px; cursor: pointer; font-size: 13px;
+  }
+  #topbar .sysbtn:hover { border-color: var(--cy); color: var(--cy); }
+
+  /* squad roster */
+  #squad { position: fixed; left: 12px; top: 64px; width: 235px; display: flex; flex-direction: column; gap: 7px; z-index: 9; }
+  .card {
+    background: var(--bg); border: 1px solid rgba(120,150,170,.22); border-left: 3px solid #51606c;
+    border-radius: 3px; padding: 7px 9px; cursor: pointer; transition: border-color .12s;
+  }
+  .card:hover { border-color: var(--cy-dim); }
+  .card.sel { border-left-color: var(--cy); border-color: var(--cy-dim); box-shadow: 0 0 12px rgba(73,224,255,.12); }
+  .card.spent { opacity: .55; }
+  .card.dead { opacity: .35; border-left-color: var(--red); text-decoration: line-through; cursor: default; }
+  .card .row1 { font-weight: 600; }
+  .card .nick { color: var(--cy); }
+  .card .cls { float: right; color: #8aa0af; font-size: 11px; font-weight: 400; }
+  .card .row2 { margin-top: 3px; display: flex; align-items: center; gap: 8px; }
+  .card .ap { color: var(--yellow); letter-spacing: 2px; }
+  .card .row3 { color: #8aa0af; font-size: 11px; margin-top: 2px; }
+  .pips { display: inline-flex; gap: 2px; }
+  .pips i { width: 11px; height: 7px; background: #232b31; border: 1px solid #000; display: inline-block; }
+  .pips i.on { background: #6ee86e; }
+  .pips i.foe.on { background: #e8524a; }
+  .st { font-style: normal; font-size: 12px; }
+
+  /* bottom action bar */
+  #bottombar {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 7px; z-index: 9;
+  }
+  #unitinfo { color: #b6cad7; text-shadow: 0 1px 2px #000; min-height: 18px; }
+  #hint { color: var(--yellow); min-height: 18px; text-shadow: 0 1px 2px #000; }
+  #actions { display: flex; gap: 8px; align-items: stretch; }
+  #actionbar { display: flex; gap: 8px; }
+  button.act, #endturn {
+    background: var(--bg); color: #d9ecf5; border: 1px solid var(--edge); border-radius: 4px;
+    min-width: 86px; padding: 10px 12px; cursor: pointer; font-weight: 600; letter-spacing: .4px;
+    position: relative; transition: all .1s;
+  }
+  button.act:hover:not(:disabled), #endturn:hover:not(:disabled) { border-color: var(--cy); color: var(--cy); }
+  button.act:disabled, #endturn:disabled { opacity: .38; cursor: default; }
+  button.act .hot {
+    position: absolute; top: 3px; left: 5px; font-size: 10px; color: var(--cy-dim); font-weight: 700;
+  }
+  #endturn { border-color: rgba(238,196,61,.4); }
+  #endturn:hover:not(:disabled) { border-color: var(--yellow); color: var(--yellow); }
+
+  /* target cards */
+  #targets {
+    position: fixed; left: 50%; bottom: 118px; transform: translateX(-50%);
+    display: none; gap: 9px; z-index: 9;
+  }
+  #targets.open { display: flex; }
+  .tcard {
+    background: var(--bg); border: 1px solid rgba(255,83,64,.35); border-radius: 4px;
+    padding: 8px 12px; text-align: center; cursor: pointer; min-width: 118px;
+  }
+  .tcard.sel { border-color: var(--red); box-shadow: 0 0 14px rgba(255,83,64,.25); }
+  .tcard .tname { font-weight: 600; margin-bottom: 3px; }
+  .tcard .hitpc { font-size: 23px; font-weight: 800; color: var(--cy); margin-top: 2px; }
+  .tcard.sel .hitpc { color: #fff; }
+  .tcard .crit { font-size: 11px; color: #8aa0af; }
+  .tcard .flank { color: var(--yellow); font-weight: 700; }
+  .tcard .cov { color: #9fb4c2; }
+
+  /* combat log */
+  #log {
+    position: fixed; right: 12px; bottom: 14px; width: 290px; max-height: 168px; overflow: hidden;
+    font-size: 11.5px; color: #91a7b5; z-index: 8; display: flex; flex-direction: column;
+  }
+  #log div { padding: 2px 6px; background: rgba(7,10,14,.55); border-radius: 2px; margin-top: 2px; }
+  #log div:first-child { color: #cfe3ee; }
+
+  /* banner */
+  #banner {
+    position: fixed; left: 50%; top: 30%; transform: translate(-50%,-50%) scale(.9);
+    font-size: 30px; font-weight: 800; letter-spacing: 6px; color: var(--cy);
+    text-shadow: 0 0 24px rgba(73,224,255,.5), 0 2px 4px #000;
+    opacity: 0; pointer-events: none; transition: all .25s; z-index: 20;
+  }
+  #banner.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  #banner.alert { color: var(--red); text-shadow: 0 0 24px rgba(255,83,64,.55), 0 2px 4px #000; }
+
+  /* floating combat text */
+  #floats { position: fixed; inset: 0; pointer-events: none; z-index: 15; }
+  .float { position: absolute; left: 0; top: 0; font-weight: 800; font-size: 17px; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+  .float.dmg { color: #fff; }
+  .float.crit { color: #ffb054; font-size: 22px; }
+  .float.miss { color: #93a5b1; font-style: italic; }
+  .float.heal { color: #6ee86e; }
+  .float.poison { color: #7ad12e; }
+  .float.info { color: var(--cy); font-size: 13px; letter-spacing: 1px; }
+
+  /* modal + help */
+  #modal, #help {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(4,6,9,.72); z-index: 30;
+  }
+  #modal.open, #help.open { display: flex; }
+  #modal .panel, #help .panel {
+    background: var(--bg); border: 1px solid var(--edge); border-radius: 6px;
+    padding: 28px 36px; text-align: center; max-width: 430px;
+  }
+  #modal h1 { letter-spacing: 3px; font-size: 24px; margin-bottom: 10px; }
+  #modal h1.win { color: var(--cy); } #modal h1.lose { color: var(--red); }
+  #modal p { color: #9fb4c2; margin-bottom: 16px; }
+  #modal .stats { display: flex; gap: 26px; justify-content: center; margin-bottom: 20px; }
+  #modal .stats b { display: block; font-size: 26px; color: #fff; }
+  #modal .stats span { color: #8aa0af; font-size: 11px; }
+  #modal .btns { display: flex; gap: 10px; justify-content: center; }
+  #modal button {
+    background: none; border: 1px solid var(--edge); color: #d9ecf5; padding: 9px 18px;
+    border-radius: 4px; cursor: pointer; font-weight: 600;
+  }
+  #modal button.primary { border-color: var(--cy); color: var(--cy); }
+  #modal button:hover { background: rgba(73,224,255,.08); }
+  #help .panel { text-align: left; }
+  #help h2 { color: var(--cy); letter-spacing: 2px; margin-bottom: 12px; font-size: 16px; }
+  #help table { border-collapse: collapse; font-size: 12.5px; }
+  #help td { padding: 3px 14px 3px 0; color: #9fb4c2; }
+  #help td:first-child { color: var(--cy); font-weight: 600; white-space: nowrap; }
+</style>
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="topbar">
+    <span id="mission">OPERATION —</span>
+    <span id="objective"></span>
+    <span id="turninfo"></span>
+    <button class="sysbtn" id="btnHelp" title="Help (H)">?</button>
+    <button class="sysbtn" id="btnMute" title="Mute (M)">🔊</button>
+    <button class="sysbtn" id="btnRestart" title="New mission">↻</button>
+  </div>
+
+  <div id="squad"></div>
+
+  <div id="targets"></div>
+
+  <div id="bottombar">
+    <div id="unitinfo"></div>
+    <div id="hint"></div>
+    <div id="actions">
+      <div id="actionbar"></div>
+      <button id="endturn" title="End turn (Enter)">End Turn ⏎</button>
+    </div>
+  </div>
+
+  <div id="log"></div>
+  <div id="banner"></div>
+  <div id="floats"></div>
+  <div id="modal"></div>
+
+  <div id="help">
+    <div class="panel">
+      <h2>FIELD MANUAL</h2>
+      <table>
+        <tr><td>Left click</td><td>Select soldier / move / pick target</td></tr>
+        <tr><td>Right click / Esc</td><td>Cancel targeting</td></tr>
+        <tr><td>WASD / arrows</td><td>Pan camera &nbsp;·&nbsp; <b>middle-drag</b> also pans</td></tr>
+        <tr><td>Q / E</td><td>Rotate camera 90°</td></tr>
+        <tr><td>Mouse wheel</td><td>Zoom</td></tr>
+        <tr><td>Tab</td><td>Next soldier / next target</td></tr>
+        <tr><td>1–6</td><td>Fire · Grenade · Overwatch · Hunker · Reload · Medkit</td></tr>
+        <tr><td>Enter</td><td>Confirm shot / end turn</td></tr>
+        <tr><td>F</td><td>Center on selected soldier</td></tr>
+        <tr><td>Blue / yellow tiles</td><td>1-action move / dash (2 actions)</td></tr>
+        <tr><td>Shields on hover</td><td>Gold = full cover, grey = half cover</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

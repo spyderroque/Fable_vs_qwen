@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XCOM 2 Tactical - Three.js</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Segoe UI', 'Consolas', monospace; }
+canvas { display: block; }
+
+/* Top HUD bar */
+#topBar {
+  position: fixed; top: 0; left: 0; right: 0; height: 48px;
+  background: linear-gradient(180deg, rgba(10,15,30,0.92) 0%, rgba(10,15,30,0.75) 100%);
+  border-bottom: 1px solid rgba(0,180,255,0.3);
+  display: flex; align-items: center; padding: 0 16px; z-index: 100;
+  color: #c0d8f0; font-size: 13px;
+}
+#topBar .title { font-weight: bold; color: #00b4ff; font-size: 15px; margin-right: 24px; letter-spacing: 2px; }
+#topBar .turnInfo { margin-right: 20px; }
+#topBar .objective { color: #8899aa; font-size: 12px; }
+#topBar .objective span { color: #ffaa44; }
+
+/* Right panel - Unit roster */
+#rightPanel {
+  position: fixed; top: 56px; right: 8px; width: 240px;
+  background: rgba(8,12,24,0.9); border: 1px solid rgba(0,180,255,0.2);
+  border-radius: 4px; z-index: 100; max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+#rightPanel .panelTitle {
+  padding: 8px 12px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 2px; color: #00b4ff; border-bottom: 1px solid rgba(0,180,255,0.15);
+  background: rgba(0,40,80,0.3);
+}
+.unitCard {
+  padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer; transition: background 0.15s;
+}
+.unitCard:hover { background: rgba(0,100,200,0.15); }
+.unitCard.selected { background: rgba(0,150,255,0.25); border-left: 3px solid #00b4ff; }
+.unitCard.enemy { opacity: 0.7; }
+.unitCard.dead { opacity: 0.35; }
+.unitCard .unitName { font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+.unitCard .unitName.xcom { color: #44aaff; }
+.unitCard .unitName.alien { color: #ff6644; }
+.unitCard .statRow { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 2px 0; }
+.unitCard .bar { height: 6px; border-radius: 2px; flex: 1; background: rgba(255,255,255,0.1); }
+.unitCard .barFill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+.unitCard .hpFill { background: linear-gradient(90deg, #ff3333, #44cc44); }
+.unitCard .apFill { background: #ffaa00; }
+.unitCard .ammoFill { background: #4488ff; }
+.unitCard .unitStats { font-size: 10px; color: #667788; margin-top: 3px; }
+
+/* Bottom action panel */
+#actionPanel {
+  position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
+  background: rgba(8,12,24,0.92); border: 1px solid rgba(0,180,255,0.25);
+  border-radius: 6px; padding: 10px 16px; z-index: 100;
+  display: flex; gap: 8px; align-items: center;
+}
+#actionPanel .actionBtn {
+  padding: 8px 16px; background: rgba(0,60,120,0.5); border: 1px solid rgba(0,150,255,0.3);
+  border-radius: 4px; color: #a0c8e8; font-size: 12px; cursor: pointer;
+  font-family: inherit; transition: all 0.15s; min-width: 80px; text-align: center;
+}
+#actionPanel .actionBtn:hover:not(:disabled) { background: rgba(0,100,200,0.5); color: #fff; }
+#actionPanel .actionBtn:disabled { opacity: 0.3; cursor: default; }
+#actionPanel .actionBtn.active { background: rgba(0,150,255,0.4); border-color: #00b4ff; color: #fff; }
+#actionPanel .separator { width: 1px; height: 30px; background: rgba(0,180,255,0.2); }
+
+/* Turn button */
+#endTurnBtn {
+  padding: 10px 24px; background: rgba(200,120,0,0.4); border: 1px solid rgba(255,170,0,0.5);
+  border-radius: 4px; color: #ffcc66; font-size: 13px; cursor: pointer;
+  font-family: inherit; font-weight: bold; letter-spacing: 1px; transition: all 0.15s;
+}
+#endTurnBtn:hover { background: rgba(200,120,0,0.6); color: #fff; }
+
+/* Tooltip / info */
+#tooltip {
+  position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+  background: rgba(8,12,24,0.95); border: 1px solid rgba(0,180,255,0.3);
+  border-radius: 4px; padding: 8px 16px; z-index: 100;
+  color: #a0c8e8; font-size: 12px; display: none; text-align: center;
+  max-width: 400px;
+}
+
+/* Combat log */
+#combatLog {
+  position: fixed; bottom: 8px; left: 8px; width: 280px; max-height: 180px;
+  background: rgba(8,12,24,0.85); border: 1px solid rgba(0,180,255,0.15);
+  border-radius: 4px; z-index: 100; overflow-y: auto; padding: 6px 10px;
+  font-size: 10px; color: #778899;
+}
+#combatLog .logEntry { margin: 2px 0; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+#combatLog .logHit { color: #ff6644; }
+#combatLog .logKill { color: #ff3333; }
+#combatLog .logInfo { color: #44aaff; }
+#combatLog .logHeal { color: #44cc44; }
+
+/* Turn announcement overlay */
+#turnOverlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); display: none; z-index: 200;
+  justify-content: center; align-items: center;
+}
+#turnOverlay .overlayText {
+  font-size: 36px; font-weight: bold; color: #00b4ff;
+  text-transform: uppercase; letter-spacing: 6px;
+  text-shadow: 0 0 30px rgba(0,180,255,0.5);
+  animation: pulse 1.5s ease-in-out;
+}
+@keyframes pulse {
+  0% { opacity: 0; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Victory/defeat screen */
+#endScreen {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.8); display: none; z-index: 300;
+  justify-content: center; align-items: center; flex-direction: column;
+}
+#endScreen .endTitle { font-size: 48px; font-weight: bold; letter-spacing: 4px; margin-bottom: 16px; }
+#endScreen .endTitle.victory { color: #44cc44; text-shadow: 0 0 40px rgba(68,204,68,0.5); }
+#endScreen .endTitle.defeat { color: #ff3333; text-shadow: 0 0 40px rgba(255,51,51,0.5); }
+#endScreen .endSub { color: #8899aa; font-size: 16px; margin-bottom: 24px; }
+#endScreen .restartBtn {
+  padding: 12px 32px; background: rgba(0,100,200,0.4); border: 1px solid rgba(0,180,255,0.4);
+  border-radius: 4px; color: #a0c8e8; font-size: 14px; cursor: pointer; font-family: inherit;
+}
+#endScreen .restartBtn:hover { background: rgba(0,150,255,0.5); color: #fff; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,180,255,0.3); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Top HUD bar -->
+<div id="topBar">
+  <div class="title">XCOM 2 TACTICAL</div>
+  <div class="turnInfo">Turn: <span id="turnNum">1</span> | Phase: <span id="phaseName">XCOM</span></div>
+  <div class="objective">Objective: Eliminate all hostiles <span id="enemyCount">0</span> remaining</div>
+</div>
+
+<!-- Right panel -->
+<div id="rightPanel">
+  <div class="panelTitle">Unit Roster</div>
+  <div id="unitList"></div>
+</div>
+
+<!-- Bottom action panel -->
+<div id="actionPanel">
+  <div class="actionBtn" data-action="move" disabled>Move</div>
+  <div class="actionBtn" data-action="shoot" disabled>Shoot</div>
+  <div class="actionBtn" data-action="overwatch" disabled>Overwatch</div>
+  <div class="actionBtn" data-action="reload" disabled>Reload</div>
+  <div class="actionBtn" data-action="grenade" disabled>Grenade</div>
+  <div class="actionBtn" data-action="hunker" disabled>Hunker</div>
+  <div class="separator"></div>
+  <button id="endTurnBtn">END TURN</button>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- Combat log -->
+<div id="combatLog">
+  <div class="logEntry logInfo">Mission started. Eliminate all hostile forces.</div>
+</div>
+
+<!-- Turn overlay -->
+<div id="turnOverlay"><div class="overlayText" id="overlayText"></div></div>
+
+<!-- End screen -->
+<div id="endScreen">
+  <div class="endTitle" id="endTitle"></div>
+  <div class="endSub" id="endSub"></div>
+  <button class="restartBtn" onclick="location.reload()">Play Again</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const GRID_W = 20, GRID_D = 20, TILE_SIZE = 2;
+const MAX_AP = 2;
+const ACTIONS = {
+  MOVE: 'move', SHOOT: 'shoot', OVERWATCH: 'overwatch',
+  RELOAD: 'reload', GRENADE: 'grenade', HUNKER: 'hunker'
+};
+const COVER_NONE = 0, COVER_HALF = 1, COVER_FULL = 2, COVER_WALL = 3;
+const TERRAIN_EMPTY = 0, TERRAIN_GROUND = 1, TERRAIN_WALL = 2, TERRAIN_BUILDING = 3, TERRAIN_CRATE = 4, TERRAIN_BARREL = 5;
+const UNIT_TYPE_XCOM = 'xcom', UNIT_TYPE_ALIEN = 'alien';
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const state = {
+  grid: [],
+  units: [],
+  selectedUnit: null,
+  currentPhase: 'xcom', // 'xcom' | 'alien'
+  turnNumber: 1,
+  turnOrder: [],
+  currentUnitIndex: 0,
+  actionPhase: true,
+  gameOver: false,
+  moveMode: false,
+  shootMode: false,
+  grenadeMode: false,
+  selectedTargets: [],
+  overwatchUnits: new Set(),
+  cameraTarget: null,
+  cameraOffset: new THREE.Vector3(28, 28, 28),
+  cameraLookAt: new THREE.Vector3(0, 0, 0),
+};
+
+// ============================================================
+// THREE.JS SETUP
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e18);
+scene.fog = new THREE.FogExp2(0x0a0e18, 0.012);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.copy(state.cameraOffset);
+camera.lookAt(state.cameraLookAt);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0x334466, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+dirLight.position.set(20, 30, 15);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.left = -25;
+dirLight.shadow.camera.right = 25;
+dirLight.shadow.camera.top = 25;
+dirLight.shadow.camera.bottom = -25;
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 80;
+dirLight.shadow.bias = -0.001;
+scene.add(dirLight);
+
+const hemiLight = new THREE.HemisphereLight(0x4488cc, 0x002244, 0.4);
+scene.add(hemiLight);
+
+// Ground plane
+const groundGeo = new THREE.PlaneGeometry(GRID_W * TILE_SIZE + 10, GRID_D * TILE_SIZE + 10);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.01;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Grid helper (subtle)
+const gridHelper = new THREE.GridHelper(Math.max(GRID_W, GRID_D) * TILE_SIZE, Math.max(GRID_W, GRID_D), 0x1a2a3a, 0x111a28);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+// ============================================================
+// MATERIALS CACHE
+// ============================================================
+const materials = {
+  ground: new THREE.MeshStandardMaterial({ color: 0x2a2a3e, roughness: 0.85 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0x4a4a5e, roughness: 0.7 }),
+  building: new THREE.MeshStandardMaterial({ color: 0x3a3a50, roughness: 0.75 }),
+  crate: new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.8 }),
+  barrel: new THREE.MeshStandardMaterial({ color: 0x556655, roughness: 0.6 }),
+  coverHalf: new THREE.MeshStandardMaterial({ color: 0x556677, roughness: 0.6, transparent: true, opacity: 0.7 }),
+  coverFull: new THREE.MeshStandardMaterial({ color: 0x445566, roughness: 0.6 }),
+  xcomBody: new THREE.MeshStandardMaterial({ color: 0x2266aa, roughness: 0.5 }),
+  xcomHelmet: new THREE.MeshStandardMaterial({ color: 0x1a4488, roughness: 0.4 }),
+  alienBody: new THREE.MeshStandardMaterial({ color: 0x884422, roughness: 0.5 }),
+  alienHelmet: new THREE.MeshStandardMaterial({ color: 0x663318, roughness: 0.4 }),
+  sectoidBody: new THREE.MeshStandardMaterial({ color: 0x448844, roughness: 0.5 }),
+  viperBody: new THREE.MeshStandardMaterial({ color: 0x774488, roughness: 0.5 }),
+  highlight: new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.3 }),
+  highlightMove: new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.35 }),
+  highlightAttack: new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.4 }),
+  highlightInvalid: new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.3 }),
+  selected: new THREE.MeshBasicMaterial({ color: 0x00b4ff, transparent: true, opacity: 0.5 }),
+  barrel: new THREE.MeshStandardMaterial({ color: 0x44aa44, roughness: 0.5 }),
+  destructible: new THREE.MeshStandardMaterial({ color: 0x886644, roughness: 0.7 }),
+};
+
+// ============================================================
+// TILE MESHES (instanced for performance)
+// ============================================================
+const tileMeshes = [];
+const tileGroup = new THREE.Group();
+scene.add(tileGroup);
+
+function createTileMeshes() {
+  // Clear old
+  while (tileGroup.children.length) {
+    const c = tileGroup.children[0];
+    tileGroup.remove(c);
+    if (c.geometry) c.geometry.dispose();
+  }
+  tileMeshes.length = 0;
+
+  for (let z = 0; z < GRID_D; z++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const tile = state.grid[z][x];
+      const px = (x - GRID_W / 2) * TILE_SIZE + TILE_SIZE / 2;
+      const pz = (z - GRID_D / 2) * TILE_SIZE + TILE_SIZE / 2;
+
+      // Ground tile
+      const geo = new THREE.BoxGeometry(TILE_SIZE - 0.05, 0.1, TILE_SIZE - 0.05);
+      const mat = tile.terrain === TERRAIN_WALL ? materials.wall.clone() :
+                  tile.terrain === TERRAIN_BUILDING ? materials.building.clone() :
+                  tile.terrain === TERRAIN_CRATE ? materials.crate.clone() :
+                  materials.ground.clone();
+      if (tile.terrain === TERRAIN_WALL) mat.color.setHex(0x3a3a50);
+      else if (tile.terrain === TERRAIN_BUILDING) mat.color.setHex(0x2a2a40);
+      else if (tile.terrain === TERRAIN_CRATE) mat.color.setHex(0x5a4a30);
+      else mat.color.setHex(0x1e1e32);
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(px, 0.05, pz);
+      mesh.receiveShadow = true;
+      mesh.userData = { gx: x, gz: z };
+      tileGroup.add(mesh);
+      tileMeshes.push(mesh);
+
+      // Walls
+      if (tile.terrain === TERRAIN_WALL) {
+        const wallGeo = new THREE.BoxGeometry(TILE_SIZE, 3, TILE_SIZE);
+        const wallMesh = new THREE.Mesh(wallGeo, materials.wall.clone());
+        wallMesh.position.set(px, 1.5, pz);
+        wallMesh.castShadow = true;
+        wallMesh.receiveShadow = true;
+        wallMesh.userData = { gx: x, gz: z, type: 'wall' };
+        tileGroup.add(wallMesh);
+        tileMeshes.push(wallMesh);
+      }
+
+      // Buildings (larger structures)
+      if (tile.terrain === TERRAIN_BUILDING) {
+        const bGeo = new THREE.BoxGeometry(TILE_SIZE, 4, TILE_SIZE);
+        const bMesh = new THREE.Mesh(bGeo, materials.building.clone());
+        bMesh.position.set(px, 2, pz);
+        bMesh.castShadow = true;
+        bMesh.receiveShadow = true;
+        bMesh.userData = { gx: x, gz: z, type: 'building' };
+        tileGroup.add(bMesh);
+        tileMeshes.push(bMesh);
+
+        // Roof
+        const roofGeo = new THREE.BoxGeometry(TILE_SIZE + 0.2, 0.15, TILE_SIZE + 0.2);
+        const roofMesh = new THREE.Mesh(roofGeo, materials.building.clone());
+        roofMesh.position.set(px, 4.05, pz);
+        roofMesh.userData = { gx: x, gz: z, type: 'roof' };
+        tileGroup.add(roofMesh);
+        tileMeshes.push(roofMesh);
+      }
+
+      // Crates
+      if (tile.terrain === TERRAIN_CRATE) {
+        const cGeo = new THREE.BoxGeometry(1.2, 0.8, 1.2);
+        const cMesh = new THREE.Mesh(cGeo, materials.crate.clone());
+        cMesh.position.set(px, 0.4, pz);
+        cMesh.castShadow = true;
+        cMesh.userData = { gx: x, gz: z, type: 'crate', hp: 3 };
+        tileGroup.add(cMesh);
+        tileMeshes.push(cMesh);
+      }
+
+      // Barrels (destructible)
+      if (tile.terrain === TERRAIN_BARREL) {
+        const bGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.0, 8);
+        const bMesh = new THREE.Mesh(bGeo, materials.barrel.clone());
+        bMesh.position.set(px, 0.5, pz);
+        bMesh.castShadow = true;
+        bMesh.userData = { gx: x, gz: z, type: 'barrel', hp: 2, explosive: true };
+        tileGroup.add(bMesh);
+        tileMeshes.push(bMesh);
+      }
+
+      // Cover objects
+      if (tile.cover > COVER_NONE) {
+        if (tile.cover === COVER_HALF) {
+          const hGeo = new THREE.BoxGeometry(TILE_SIZE * 0.9, 0.7, 0.3);
+          const hMesh = new THREE.Mesh(hGeo, materials.coverHalf.clone());
+          hMesh.position.set(px, 0.35, pz);
+          hMesh.castShadow = true;
+          hMesh.userData = { gx: x, gz: z, type: 'cover' };
+          tileGroup.add(hMesh);
+          tileMeshes.push(hMesh);
+        } else if (tile.cover === COVER_FULL) {
+          const fGeo = new THREE.BoxGeometry(TILE_SIZE * 0.85, 1.2, TILE_SIZE * 0.85);
+          const fMesh = new THREE.Mesh(fGeo, materials.coverFull.clone());
+          fMesh.position.set(px, 0.6, pz);
+          fMesh.castShadow = true;
+          fMesh.userData = { gx: x, gz: z, type: 'cover' };
+          tileGroup.add(fMesh);
+          tileMeshes.push(fMesh);
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// UNIT MESHES
+// ============================================================
+const unitMeshes = new Map();
+
+function createUnitMesh(unit) {
+  const group = new THREE.Group();
+  const isXcom = unit.team === UNIT_TYPE_XCOM;
+
+  // Body
+  const bodyGeo = new THREE.CylinderGeometry(0.35, 0.4, 1.0, 8);
+  const bodyMat = isXcom ? materials.xcomBody.clone() : materials.alienBody.clone();
+  if (unit.type === 'sectoid') bodyMat.color.setHex(0x44aa44);
+  else if (unit.type === 'viper') bodyMat.color.setHex(0x774488);
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.8;
+  body.castShadow = true;
+  group.add(body);
+
+  // Helmet/head
+  const headGeo = new THREE.SphereGeometry(0.25, 8, 8);
+  const headMat = isXcom ? materials.xcomHelmet.clone() :
+    (unit.type === 'sectoid' ? materials.sectoidBody.clone() :
+     unit.type === 'viper' ? materials.viperBody.clone() : materials.alienHelmet.clone());
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 1.55;
+  head.castShadow = true;
+  group.add(head);
+
+  // Weapon
+  const weaponGeo = new THREE.BoxGeometry(0.1, 0.1, 0.6);
+  const weaponMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.3 });
+  const weapon = new THREE.Mesh(weaponGeo, weaponMat);
+  weapon.position.set(0.3, 1.0, 0.2);
+  group.add(weapon);
+
+  // Health bar background
+  const hpBgGeo = new THREE.PlaneGeometry(0.8, 0.08);
+  const hpBgMat = new THREE.MeshBasicMaterial({ color: 0x330000, side: THREE.DoubleSide });
+  const hpBg = new THREE.Mesh(hpBgGeo, hpBgMat);
+  hpBg.position.y = 1.95;
+  group.add(hpBg);
+
+  // Health bar fill
+  const hpFillGeo = new THREE.PlaneGeometry(0.78, 0.06);
+  const hpFillMat = new THREE.MeshBasicMaterial({ color: 0x44cc44, side: THREE.DoubleSide });
+  const hpFill = new THREE.Mesh(hpFillGeo, hpFillMat);
+  hpFill.position.y = 1.95;
+  hpFill.position.z = -0.001;
+  group.add(hpFill);
+
+  // AP indicator (small dots)
+  const apGroup = new THREE.Group();
+  for (let i = 0; i < MAX_AP; i++) {
+    const dotGeo = new THREE.CircleGeometry(0.06, 8);
+    const dotMat = new THREE.MeshBasicMaterial({
+      color: i < unit.ap ? 0xffaa00 : 0x444444, side: THREE.DoubleSide
+    });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.set(-0.15 + i * 0.15, 1.8, 0);
+    apGroup.add(dot);
+  }
+  group.add(apGroup);
+
+  // Status indicator
+  const statusGeo = new THREE.CircleGeometry(0.08, 8);
+  const statusMat = new THREE.MeshBasicMaterial({
+    color: unit.status ? 0xff4444 : 0x00ff88, side: THREE.DoubleSide
+  });
+  const status = new THREE.Mesh(statusGeo, statusMat);
+  status.position.set(0.5, 1.95, 0);
+  group.add(status);
+
+  // Selection ring
+  const ringGeo = new THREE.RingGeometry(0.5, 0.6, 16);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x00b4ff, transparent: true, opacity: 0, side: THREE.DoubleSide
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+  group.add(ring);
+
+  // Position
+  const px = (unit.gridX - GRID_W / 2) * TILE_SIZE + TILE_SIZE / 2;
+  const pz = (unit.gridZ - GRID_D / 2) * TILE_SIZE + TILE_SIZE / 2;
+  group.position.set(px, 0, pz);
+
+  group.userData = { unitId: unit.id };
+  scene.add(group);
+
+  unitMeshes.set(unit.id, { group, body, head, hpBg, hpFill, apGroup, status, ring, weapon });
+  updateUnitMesh(unit);
+}
+
+function updateUnitMesh(unit) {
+  const meshData = unitMeshes.get(unit.id);
+  if (!meshData) return;
+
+  const { hpFill, status, ring, apGroup } = meshData;
+
+  // HP bar
+  const hpRatio = Math.max(0, unit.hp / unit.maxHp);
+  hpFill.scale.x = hpRatio;
+  hpFill.position.x = -0.39 + (hpRatio * 0.39);
+  if (hpRatio > 0.6) hpFill.material.color.setHex(0x44cc44);
+  else if (hpRatio > 0.3) hpFill.material.color.setHex(0xccaa44);
+  else hpFill.material.color.setHex(0xcc3333);
+
+  // Status
+  status.material.color.setHex(unit.status ? 0xff4444 : 0x00ff88);
+
+  // AP dots
+  const dots = apGroup.children;
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].material.color.setHex(i < unit.ap ? 0xffaa00 : 0x444444);
+  }
+
+  // Selection ring
+  ring.material.opacity = (state.selectedUnit && state.selectedUnit.id === unit.id) ? 0.8 : 0;
+
+  // Position
+  const px = (unit.gridX - GRID_W / 2) * TILE_SIZE + TILE_SIZE / 2;
+  const pz = (unit.gridZ - GRID_D / 2) * TILE_SIZE + TILE_SIZE / 2;
+  meshData.group.position.set(px, 0, pz);
+}
+
+function removeUnitMesh(unit) {
+  const meshData = unitMeshes.get(unit.id);
+  if (!meshData) return;
+  scene.remove(meshData.group);
+  unitMeshes.delete(unit.id);
+}
+
+// ============================================================
+// MAP GENERATION
+// ============================================================
+function generateMap() {
+  state.grid = [];
+  for (let z = 0; z < GRID_D; z++) {
+    state.grid[z] = [];
+    for (let x = 0; x < GRID_W; x++) {
+      state.grid[z][x] = {
+        terrain: TERRAIN_GROUND,
+        cover: COVER_NONE,
+        destructible: false,
+        visible: false,
+        explored: false,
+      };
+    }
+  }
+
+  // Perlin-like noise for terrain features
+  const seed = Math.random() * 1000;
+  function noise(x, z) {
+    return Math.sin(x * 0.3 + seed) * Math.cos(z * 0.3 + seed * 0.7) * 0.5 +
+           Math.sin(x * 0.15 + z * 0.2 + seed * 1.3) * 0.3 +
+           Math.cos(x * 0.5 - z * 0.4 + seed * 0.5) * 0.2;
+  }
+
+  // Place walls and structures
+  for (let i = 0; i < 15; i++) {
+    const cx = 3 + Math.floor(Math.random() * (GRID_W - 6));
+    const cz = 3 + Math.floor(Math.random() * (GRID_D - 6));
+    const size = 1 + Math.floor(Math.random() * 3);
+    for (let dz = 0; dz < size; dz++) {
+      for (let dx = 0; dx < size; dx++) {
+        const wx = cx + dx, wz = cz + dz;
+        if (wx >= 0 && wx < GRID_W && wz >= 0 && wz < GRID_D) {
+          if (noise(wx, wz) > 0.3) {
+            state.grid[wz][wx].terrain = TERRAIN_WALL;
+          }
+        }
+      }
+    }
+  }
+
+  // Place buildings
+  for (let i = 0; i < 6; i++) {
+    const cx = 2 + Math.floor(Math.random() * (GRID_W - 4));
+    const cz = 2 + Math.floor(Math.random() * (GRID_D - 4));
+    const size = 2 + Math.floor(Math.random() * 2);
+    for (let dz = 0; dz < size; dz++) {
+      for (let dx = 0; dx < size; dx++) {
+        const bx = cx + dx, bz = cz + dz;
+        if (bx >= 0 && bx < GRID_W && bz >= 0 && bz < GRID_D) {
+          if (state.grid[bz][bx].terrain === TERRAIN_GROUND) {
+            state.grid[bz][bx].terrain = TERRAIN_BUILDING;
+          }
+        }
+      }
+    }
+  }
+
+  // Place crates and barrels
+  for (let i = 0; i < 20; i++) {
+    const cx = Math.floor(Math.random() * GRID_W);
+    const cz = Math.floor(Math.random() * GRID_D);
+    if (state.grid[cz][cx].terrain === TERRAIN_GROUND) {
+      state.grid[cz][cx].terrain = Math.random() > 0.5 ? TERRAIN_CRATE : TERRAIN_BARREL;
+      state.grid[cz][cx].destructible = true;
+    }
+  }
+
+  // Place cover objects (strategic positions)
+  for (let i = 0; i < 25; i++) {
+    const cx = 1 + Math.floor(Math.random() * (GRID_W - 2));
+    const cz = 1 + Math.floor(Math.random() * (GRID_D - 2));
+    if (state.grid[cz][cx].terrain === TERRAIN_GROUND &&
+        state.grid[cz][cx].cover === COVER_NONE) {
+      state.grid[cz][cx].cover = Math.random() > 0.5 ? COVER_HALF : COVER_FULL;
+    }
+  }
+
+  // Clear spawn areas
+  for (let x = 0; x < 4; x++) {
+    for (let z = 0; z < GRID_D; z++) {
+      state.grid[z][x].terrain = TERRAIN_GROUND;
+      state.grid[z][x].cover = COVER_NONE;
+    }
+    const lastX = GRID_W - 1 - x;
+    for (let z = 0; z < GRID_D; z++) {
+      state.grid[z][lastX].terrain = TERRAIN_GROUND;
+      state.grid[z][lastX].cover = COVER_NONE;
+    }
+  }
+  for (let z = 0; z < 3; z++) {
+    for (let x = 0; x < GRID_W; x++) {
+      state.grid[z][x].terrain = TERRAIN_GROUND;
+      state.grid[z][x].cover = COVER_NONE;
+    }
+  }
+}
+
+// ============================================================
+// UNIT DEFINITIONS
+// ============================================================
+const UNIT_DEFS = {
+  soldier: { name: 'Soldier', hp: 12, armor: 2, accuracy: 75, moveRange: 5, damage: 5, range: 10, apCost: 1 },
+  sharpshooter: { name: 'Sharpshooter', hp: 10, armor: 1, accuracy: 85, moveRange: 4, damage: 7, range: 14, apCost: 1 },
+  grenadier: { name: 'Grenadier', hp: 14, armor: 3, accuracy: 65, moveRange: 5, damage: 4, range: 8, apCost: 1 },
+  assault: { name: 'Assault', hp: 11, armor: 2, accuracy: 70, moveRange: 6, damage: 4, range: 7, apCost: 1 },
+  adventSoldier: { name: 'Advent Soldier', hp: 8, armor: 1, accuracy: 65, moveRange: 4, damage: 4, range: 9, apCost: 1 },
+  sectoid: { name: 'Sectoid', hp: 10, armor: 0, accuracy: 60, moveRange: 5, damage: 5, range: 8, apCost: 1 },
+  viper: { name: 'Viper', hp: 9, armor: 1, accuracy: 70, moveRange: 5, damage: 4, range: 8, apCost: 1 },
+};
+
+// ============================================================
+// UNIT FACTORY
+// ============================================================
+let unitIdCounter = 0;
+
+function createUnit(type, team, gridX, gridZ, name) {
+  const def = UNIT_DEFS[type];
+  const unit = {
+    id: unitIdCounter++,
+    type, team, name,
+    ...def,
+    hp: def.hp,
+    maxHp: def.hp,
+    ap: MAX_AP,
+    gridX, gridZ,
+    status: null, // 'overwatch', 'hunker', 'stunned'
+    ammo: 5,
+    maxAmmo: 5,
+    alive: true,
+    hasActed: false,
+  };
+  state.units.push(unit);
+  createUnitMesh(unit);
+  return unit;
+}
+
+function spawnSquadrons() {
+  // XCOM squad (4 units)
+  const xcomNames = ['Valkir', 'Phoenix', 'Spectre', 'Widow'];
+  const xcomTypes = ['soldier', 'sharpshooter', 'grenadier', 'assault'];
+  for (let i = 0; i < 4; i++) {
+    createUnit(xcomTypes[i], UNIT_TYPE_XCOM, 1, 2 + i * 3, xcomNames[i]);
+  }
+
+  // Alien enemies (6-8 units)
+  const alienNames = ['Alien 1', 'Alien 2', 'Sectoid Alpha', 'Viper Prime', 'Alien 3', 'Alien 4'];
+  const alienTypes = ['adventSoldier', 'adventSoldier', 'sectoid', 'viper', 'adventSoldier', 'sectoid'];
+  const spawnZ = GRID_D - 3;
+  for (let i = 0; i < 6; i++) {
+    const sx = GRID_W - 2 - Math.floor(i / 2);
+    const sz = spawnZ - (i % 2);
+    createUnit(alienTypes[i], UNIT_TYPE_ALIEN, sx, Math.max(0, sz), alienNames[i]);
+  }
+}
+
+// ============================================================
+// PATHFINDING (BFS)
+// ============================================================
+function isWalkable(x, z, excludeUnitId = null) {
+  if (x < 0 || x >= GRID_W || z < 0 || z >= GRID_D) return false;
+  const tile = state.grid[z][x];
+  if (tile.terrain === TERRAIN_WALL) return false;
+  // Check if a unit occupies this tile (except the one we're checking from)
+  for (const u of state.units) {
+    if (u.alive && u.gridX === x && u.gridZ === z && u.id !== excludeUnitId) return false;
+  }
+  return true;
+}
+
+function findPath(startX, startZ, endX, endZ, maxRange, excludeUnitId = null) {
+  if (endX < 0 || endX >= GRID_W || endZ < 0 || endZ >= GRID_D) return null;
+  if (state.grid[endZ][endX].terrain === TERRAIN_WALL) return null;
+
+  const visited = new Set();
+  const queue = [{ x: startX, z: startZ, dist: 0, path: [] }];
+  visited.add(`${startX},${startZ}`);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (current.x === endX && current.z === endZ) {
+      return current.path;
+    }
+
+    if (current.dist >= maxRange) continue;
+
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dx, dz] of dirs) {
+      const nx = current.x + dx, nz = current.z + dz;
+      const key = `${nx},${nz}`;
+      if (!visited.has(key) && isWalkable(nx, nz, excludeUnitId)) {
+        visited.add(key);
+        queue.push({ x: nx, z: nz, dist: current.dist + 1, path: [...current.path, { x: nx, z: nz }] });
+      }
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// LINE OF SIGHT
+// ============================================================
+function hasLineOfSight(x0, z0, x1, z1) {
+  // Bresenham's line algorithm
+  const dx = Math.abs(x1 - x0);
+  const dz = Math.abs(z1 - z0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sz = z0 < z1 ? 1 : -1;
+  let x = x0, z = z0;
+  let err = dx - dz;
+
+  while (true) {
+    const tile = state.grid[z][x];
+    if (tile.terrain === TERRAIN_WALL || tile.terrain === TERRAIN_BUILDING) {
+      // Check if it's a building with roof (can't see through)
+      if (tile.terrain === TERRAIN_BUILDING) return false;
+      return false;
+    }
+    if (x === x1 && z === z1) return true;
+    const e2 = 2 * err;
+    if (e2 > -dz) { err -= dz; x += sx; }
+    if (e2 < dx) { err += dx; z += sz; }
+    if (x < 0 || x >= GRID_W || z < 0 || z >= GRID_D) return false;
+  }
+}
+
+// ============================================================
+// VISIBILITY / FOG OF WAR
+// ============================================================
+function updateVisibility(unit) {
+  const range = 8;
+  for (let dz = -range; dz <= range; dz++) {
+    for (let dx = -range; dx <= range; dx++) {
+      const nx = unit.gridX + dx, nz = unit.gridZ + dz;
+      if (nx >= 0 && nx < GRID_W && nz >= 0 && nz < GRID_D) {
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist <= range) {
+          state.grid[nz][nx].visible = true;
+          state.grid[nz][nx].explored = true;
+        }
+      }
+    }
+  }
+}
+
+function updateAllVisibility() {
+  for (const unit of state.units) {
+    if (unit.alive) updateVisibility(unit);
+  }
+}
+
+// ============================================================
+// COMBAT CALCULATIONS
+// ============================================================
+function calculateHitChance(attacker, target) {
+  const dist = Math.sqrt(
+    Math.pow(attacker.gridX - target.gridX, 2) +
+    Math.pow(attacker.gridZ - target.gridZ, 2)
+  );
+  if (dist > attacker.range) return 0;
+
+  let chance = attacker.accuracy;
+
+  // Distance penalty
+  const rangeRatio = dist / attacker.range;
+  chance -= rangeRatio * 20;
+
+  // Cover bonus for target
+  const targetTile = state.grid[target.gridZ][target.gridX];
+  if (targetTile.cover === COVER_HALF) chance -= 20;
+  else if (targetTile.cover === COVER_FULL) chance -= 40;
+
+  // Flanking bonus
+  const flankAngle = getFlankAngle(attacker, target);
+  if (flankAngle > 90) chance += 15;
+
+  // Hunker penalty
+  if (target.status === 'hunker') chance -= 15;
+
+  // Overwatch penalty
+  if (attacker.status === 'overwatch') chance -= 20;
+
+  return Math.max(5, Math.min(95, Math.round(chance)));
+}
+
+function getFlankAngle(attacker, target) {
+  // Simple angle calculation based on relative positions
+  const dx = target.gridX - attacker.gridX;
+  const dz = target.gridZ - attacker.gridZ;
+  return Math.atan2(Math.abs(dz), Math.abs(dx)) * (180 / Math.PI);
+}
+
+function calculateDamage(attacker, target, isGrenade = false) {
+  let dmg = attacker.damage;
+  if (isGrenade) dmg = Math.round(dmg * 1.5);
+
+  // Armor reduction
+  const armorReduction = Math.min(target.armor, Math.floor(dmg * 0.3));
+  dmg -= armorReduction;
+
+  // Random variation
+  dmg = Math.max(1, dmg + Math.floor(Math.random() * 3) - 1);
+
+  return dmg;
+}
+
+function applyDamage(target, damage) {
+  target.hp -= damage;
+  if (target.hp <= 0) {
+    target.hp = 0;
+    target.alive = false;
+    const meshData = unitMeshes.get(target.id);
+    if (meshData) {
+      meshData.group.visible = false;
+    }
+    addLog(`${target.name} has been eliminated!`, 'logKill');
+    checkWinCondition();
+  } else {
+    addLog(`${target.name} takes ${damage} damage (${target.hp}/${target.maxHp} HP)`, 'logHit');
+  }
+  updateUnitMesh(target);
+  updateUI();
+}
+
+// ============================================================
+// EXPLOSIVE TILE DAMAGE
+// ============================================================
+function explodeAt(gx, gz, radius = 1, damage = 6) {
+  for (let dz = -radius; dz <= radius; dz++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const nx = gx + dx, nz = gz + dz;
+      if (nx < 0 || nx >= GRID_W || nz < 0 || nz >= GRID_D) continue;
+      if (Math.abs(dx) + Math.abs(dz) > radius) continue;
+
+      // Damage units in area
+      for (const unit of state.units) {
+        if (!unit.alive) continue;
+        if (unit.gridX === nx && unit.gridZ === nz) {
+          applyDamage(unit, damage);
+        }
+      }
+
+      // Destroy destructibles
+      if (state.grid[nz][nx].destructible) {
+        state.grid[nz][nx].terrain = TERRAIN_GROUND;
+        state.grid[nz][nx].destructible = false;
+        // Remove mesh
+        const toRemove = [];
+        tileGroup.children.forEach(c => {
+          if (c.userData.gx === nx && c.userData.gz === nz && c.userData.type) toRemove.push(c);
+        });
+        toRemove.forEach(c => {
+          tileGroup.remove(c);
+          const idx = tileMeshes.indexOf(c);
+          if (idx >= 0) tileMeshes.splice(idx, 1);
+        });
+      }
+    }
+  }
+}
+
+// ============================================================
+// TURN ORDER
+// ============================================================
+function buildTurnOrder() {
+  const aliveUnits = state.units.filter(u => u.alive);
+  state.turnOrder = aliveUnits
+    .map(u => ({ id: u.id, initiative: Math.random() * 10 + u.moveRange }))
+    .sort((a, b) => b.initiative - a.initiative)
+    .map(x => state.units.find(u => u.id === x.id));
+  state.currentUnitIndex = 0;
+}
+
+// ============================================================
+// ACTION EXECUTION
+// ============================================================
+function useAction(unit) {
+  if (unit.ap <= 0) return false;
+  unit.ap--;
+  if (unit.ap <= 0) {
+    unit.hasActed = true;
+  }
+  updateUnitMesh(unit);
+  updateUI();
+  return true;
+}
+
+function executeMove(unit, targetX, targetZ) {
+  const path = findPath(unit.gridX, unit.gridZ, targetX, targetZ, unit.moveRange, unit.id);
+  if (!path || path.length === 0) return false;
+
+  const last = path[path.length - 1];
+  unit.gridX = last.x;
+  unit.gridZ = last.z;
+
+  // Check for spotting (aliens see XCOM moving into their view)
+  if (unit.team === UNIT_TYPE_XCOM) {
+    for (const alien of state.units) {
+      if (alien.team !== UNIT_TYPE_ALIEN || !alien.alive) continue;
+      if (hasLineOfSight(alien.gridX, alien.gridZ, unit.gridX, unit.gridZ)) {
+        // Spot the unit
+        alien.spotted = true;
+      }
+    }
+  }
+
+  updateAllVisibility();
+  updateUnitMesh(unit);
+  return true;
+}
+
+function executeShoot(attacker, target) {
+  if (!hasLineOfSight(attacker.gridX, attacker.gridZ, target.gridX, target.gridZ)) {
+    addLog(`${attacker.name}: No line of sight to target!`, 'logInfo');
+    return false;
+  }
+
+  const chance = calculateHitChance(attacker, target);
+  const roll = Math.random() * 100;
+  addLog(`${attacker.name} shoots at ${target.name} (${chance}% hit)`, 'logInfo');
+
+  if (roll <= chance) {
+    const dmg = calculateDamage(attacker, target);
+    applyDamage(target, dmg);
+  } else {
+    addLog(`${attacker.name} misses ${target.name}!`, 'logInfo');
+  }
+
+  useAction(attacker);
+  return true;
+}
+
+function executeGrenade(attacker, targetX, targetZ) {
+  const dist = Math.sqrt(
+    Math.pow(attacker.gridX - targetX, 2) +
+    Math.pow(attacker.gridZ - targetZ, 2)
+  );
+  if (dist > 6) {
+    addLog(`${attacker.name}: Grenade out of range!`, 'logInfo');
+    return false;
+  }
+
+  if (!useAction(attacker)) return false;
+
+  addLog(`${attacker.name} throws a grenade!`, 'logInfo');
+  explodeAt(targetX, targetZ, 1, attacker.damage);
+
+  attacker.ammo--;
+  if (attacker.ammo <= 0) {
+    attacker.reload();
+  }
+  return true;
+}
+
+function executeReload(unit) {
+  if (unit.ammo >= unit.maxAmmo) {
+    addLog(`${unit.name} is already fully loaded.`, 'logInfo');
+    return false;
+  }
+  unit.ammo = unit.maxAmmo;
+  useAction(unit);
+  addLog(`${unit.name} reloads weapons.`, 'logInfo');
+  return true;
+}
+
+function executeOverwatch(unit) {
+  unit.status = 'overwatch';
+  useAction(unit);
+  addLog(`${unit.name} goes on overwatch.`, 'logInfo');
+  return true;
+}
+
+function executeHunker(unit) {
+  unit.status = 'hunker';
+  useAction(unit);
+  addLog(`${unit.name} takes a defensive position.`, 'logInfo');
+  return true;
+}
+
+// ============================================================
+// ENEMY AI
+// ============================================================
+function processEnemyAI() {
+  const enemies = state.units.filter(u => u.team === UNIT_TYPE_ALIEN && u.alive);
+  const xcomUnits = state.units.filter(u => u.team === UNIT_TYPE_XCOM && u.alive);
+
+  if (xcomUnits.length === 0) return;
+
+  // Process each enemy in turn order
+  let delay = 0;
+  for (const enemy of enemies) {
+    enemy.ap = MAX_AP;
+    enemy.hasActed = false;
+    enemy.status = null;
+
+    setTimeout(() => {
+      if (!enemy.alive || state.gameOver) return;
+      actEnemy(enemy, xcomUnits);
+      updateUnitMesh(enemy);
+      updateUI();
+    }, delay);
+    delay += 800;
+  }
+}
+
+function actEnemy(enemy, xcomUnits) {
+  if (!enemy.alive) return;
+
+  // Find best target
+  let bestTarget = null;
+  let bestScore = -Infinity;
+  for (const xcom of xcomUnits) {
+    if (!xcom.alive) continue;
+    const dist = Math.sqrt(
+      Math.pow(enemy.gridX - xcom.gridX, 2) +
+      Math.pow(enemy.gridZ - xcom.gridZ, 2)
+    );
+    if (dist > enemy.range) continue;
+    if (!hasLineOfSight(enemy.gridX, enemy.gridZ, xcom.gridX, xcom.gridZ)) continue;
+
+    let score = 100 - dist * 5;
+    const targetTile = state.grid[xcom.gridZ][xcom.gridX];
+    if (targetTile.cover === COVER_HALF) score += 10;
+    else if (targetTile.cover === COVER_FULL) score += 20;
+    if (xcom.hp < xcom.maxHp * 0.5) score += 30; // Prioritize wounded
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestTarget = xcom;
+    }
+  }
+
+  // Action 1: Move if not in range or no clear shot
+  if (enemy.ap > 0 && (!bestTarget || !hasLineOfSight(enemy.gridX, enemy.gridZ, bestTarget.gridX, bestTarget.gridZ))) {
+    // Find cover tile closer to XCOM
+    let bestMove = null;
+    let bestMoveScore = -Infinity;
+
+    for (let dz = -enemy.moveRange; dz <= enemy.moveRange; dz++) {
+      for (let dx = -enemy.moveRange; dx <= enemy.moveRange; dx++) {
+        const nx = enemy.gridX + dx, nz = enemy.gridZ + dz;
+        if (!isWalkable(nx, nz, enemy.id)) continue;
+
+        let score = 0;
+        // Prefer cover
+        const tile = state.grid[nz][nx];
+        if (tile.cover > COVER_NONE) score += tile.cover * 15;
+        // Prefer closer to XCOM
+        if (bestTarget) {
+          const dist = Math.sqrt(
+            Math.pow(nx - bestTarget.gridX, 2) +
+            Math.pow(nz - bestTarget.gridZ, 2)
+          );
+          score += (enemy.range - dist) * 3;
+        }
+        // Prefer flanking positions
+        if (bestTarget) {
+          const angle = getFlankAngle({ gridX: nx, gridZ: nz }, bestTarget);
+          if (angle > 60 && angle < 120) score += 10;
+        }
+
+        if (score > bestMoveScore) {
+          bestMoveScore = score;
+          bestMove = { x: nx, z: nz };
+        }
+      }
+    }
+
+    if (bestMove && bestMoveScore > -20) {
+      const path = findPath(enemy.gridX, enemy.gridZ, bestMove.x, bestMove.z, enemy.moveRange, enemy.id);
+      if (path && path.length > 0) {
+        const last = path[path.length - 1];
+        enemy.gridX = last.x;
+        enemy.gridZ = last.z;
+        updateAllVisibility();
+        updateUnitMesh(enemy);
+        addLog(`${enemy.name} moves to cover.`, 'logInfo');
+        useAction(enemy);
+      }
+    }
+  }
+
+  // Action 2: Shoot if target in range
+  if (enemy.ap > 0 && bestTarget && hasLineOfSight(enemy.gridX, enemy.gridZ, bestTarget.gridX, bestTarget.gridZ)) {
+    executeShoot(enemy, bestTarget);
+  }
+
+  // Overwatch if has AP remaining
+  if (enemy.ap > 0 && !bestTarget) {
+    executeOverwatch(enemy);
+  }
+}
+
+// ============================================================
+// OVERWATCH TRIGGERS
+// ============================================================
+function checkOverwatchTriggers(movingUnit) {
+  for (const unit of state.units) {
+    if (!unit.alive || unit.team === movingUnit.team || unit.status !== 'overwatch') continue;
+    if (!hasLineOfSight(unit.gridX, unit.gridZ, movingUnit.gridX, movingUnit.gridZ)) continue;
+
+    const chance = calculateHitChance(unit, movingUnit) - 20; // Overwatch penalty
+    const roll = Math.random() * 100;
+    addLog(`${unit.name} fires overwatch at ${movingUnit.name} (${chance}%)`, 'logInfo');
+
+    if (roll <= chance) {
+      const dmg = calculateDamage(unit, movingUnit);
+      applyDamage(movingUnit, dmg);
+      unit.status = null; // Overwatch consumed
+      addLog(`${unit.name}'s overwatch ends.`, 'logInfo');
+      updateUnitMesh(unit);
+    }
+  }
+}
+
+// ============================================================
+// TURN MANAGEMENT
+// ============================================================
+function startTurn(phase) {
+  state.currentPhase = phase;
+  buildTurnOrder();
+
+  // Reset AP for all units of this phase
+  for (const unit of state.units) {
+    if (!unit.alive) continue;
+    unit.ap = MAX_AP;
+    unit.hasActed = false;
+    if (phase === 'xcom') {
+      unit.status = null;
+      unit.spotted = false;
+    }
+    updateUnitMesh(unit);
+  }
+
+  state.overwatchUnits.clear();
+  showTurnOverlay(phase === 'xcom' ? `XCOM Turn ${state.turnNumber}` : 'Enemy Turn');
+  updateUI();
+}
+
+function advanceTurn() {
+  const currentUnit = state.turnOrder[state.currentUnitIndex];
+
+  if (state.currentPhase === 'xcom') {
+    // Check overwatch for aliens
+    for (const alien of state.units) {
+      if (alien.team === UNIT_TYPE_ALIEN && alien.alive && alien.status === 'overwatch') {
+        state.overwatchUnits.add(alien.id);
+      }
+    }
+
+    // Move to alien turn
+    state.currentPhase = 'alien';
+    state.turnNumber++;
+    startTurn('alien');
+  } else {
+    // Process overwatch triggers for XCOM
+    startTurn('xcom');
+  }
+}
+
+function nextUnitInOrder() {
+  state.currentUnitIndex++;
+  while (state.currentUnitIndex < state.turnOrder.length) {
+    const unit = state.turnOrder[state.currentUnitIndex];
+    if (!unit.alive) {
+      state.currentUnitIndex++;
+      continue;
+    }
+    if (state.currentPhase === 'xcom' && unit.team !== UNIT_TYPE_XCOM) {
+      state.currentUnitIndex++;
+      continue;
+    }
+    if (state.currentPhase === 'alien' && unit.team !== UNIT_TYPE_ALIEN) {
+      state.currentUnitIndex++;
+      continue;
+    }
+    break;
+  }
+
+  if (state.currentUnitIndex >= state.turnOrder.length) {
+    advanceTurn();
+    return;
+  }
+
+  const unit = state.turnOrder[state.currentUnitIndex];
+  state.selectedUnit = unit;
+  updateUnitMesh(unit);
+  updateUI();
+}
+
+// ============================================================
+// WIN CONDITION
+// ============================================================
+function checkWinCondition() {
+  const xcomAlive = state.units.filter(u => u.team === UNIT_TYPE_XCOM && u.alive).length;
+  const alienAlive = state.units.filter(u => u.team === UNIT_TYPE_ALIEN && u.alive).length;
+
+  const endScreen = document.getElementById('endScreen');
+  const endTitle = document.getElementById('endTitle');
+  const endSub = document.getElementById('endSub');
+
+  if (alienAlive === 0) {
+    state.gameOver = true;
+    endTitle.className = 'endTitle victory';
+    endTitle.textContent = 'MISSION COMPLETE';
+    endSub.textContent = `All hostiles eliminated on turn ${state.turnNumber}`;
+    endScreen.style.display = 'flex';
+  } else if (xcomAlive === 0) {
+    state.gameOver = true;
+    endTitle.className = 'endTitle defeat';
+    endTitle.textContent = 'MISSION FAILED';
+    endSub.textContent = 'All XCOM forces have been eliminated';
+    endScreen.style.display = 'flex';
+  }
+}
+
+// ============================================================
+// RENDERING HELPERS
+// ============================================================
+let highlightMeshes = [];
+
+function clearHighlights() {
+  highlightMeshes.forEach(m => {
+    scene.remove(m);
+    m.geometry?.dispose();
+    m.material?.dispose();
+  });
+  highlightMeshes = [];
+}
+
+function addHighlight(x, z, material, y = 0.05) {
+  const geo = new THREE.BoxGeometry(TILE_SIZE - 0.1, 0.15, TILE_SIZE - 0.1);
+  const mesh = new THREE.Mesh(geo, material);
+  const px = (x - GRID_W / 2) * TILE_SIZE + TILE_SIZE / 2;
+  const pz = (z - GRID_D / 2) * TILE_SIZE + TILE_SIZE / 2;
+  mesh.position.set(px, y, pz);
+  scene.add(mesh);
+  highlightMeshes.push(mesh);
+}
+
+function addPathHighlights(path) {
+  for (const { x, z } of path) {
+    addHighlight(x, z, materials.highlightMove);
+  }
+}
+
+// ============================================================
+// CAMERA CONTROLS
+// ============================================================
+const keys = {};
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let camRotY = Math.PI / 4;
+let camRotX = Math.PI / 4;
+let camDist = 40;
+let camTarget = new THREE.Vector3(0, 0, 0);
+
+function updateCamera() {
+  const x = camTarget.x + camDist * Math.sin(camRotX) * Math.cos(camRotY);
+  const y = camDist * Math.cos(camRotX);
+  const z = camTarget.z + camDist * Math.sin(camRotX) * Math.sin(camRotY);
+  camera.position.set(x, y, z);
+  camera.lookAt(camTarget);
+}
+
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function handleKeyboard() {
+  const speed = 0.3;
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+  if (keys['w'] || keys['arrowup']) camTarget.add(forward.clone().multiplyScalar(speed));
+  if (keys['s'] || keys['arrowdown']) camTarget.add(forward.clone().multiplyScalar(-speed));
+  if (keys['a'] || keys['arrowleft']) camTarget.add(right.clone().multiplyScalar(-speed));
+  if (keys['d'] || keys['arrowright']) camTarget.add(right.clone().multiplyScalar(speed));
+  if (keys['q']) camTarget.y += speed;
+  if (keys['e']) camTarget.y -= speed;
+
+  // Clamp
+  camTarget.x = Math.max(-20, Math.min(20, camTarget.x));
+  camTarget.z = Math.max(-20, Math.min(20, camTarget.z));
+  camTarget.y = Math.max(0, Math.min(15, camTarget.y));
+}
+
+// ============================================================
+// RAYCASTING / INPUT
+// ============================================================
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoveredTile = null;
+
+function getGridFromMouse(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(tileMeshes, false);
+
+  for (const hit of intersects) {
+    if (hit.object.userData.gx !== undefined && hit.object.userData.gz !== undefined) {
+      return { x: hit.object.userData.gx, z: hit.object.userData.gz };
+    }
+  }
+  return null;
+}
+
+function getUnitAtGrid(x, z) {
+  return state.units.find(u => u.alive && u.gridX === x && u.gridZ === z);
+}
+
+window.addEventListener('mousemove', e => {
+  const grid = getGridFromMouse(e);
+  hoveredTile = grid;
+
+  if (isPanning) {
+    const dx = (e.clientX - panStart.x) * 0.02;
+    const dy = (e.clientY - panStart.y) * 0.02;
+    camRotY -= dx;
+    camRotX = Math.max(0.3, Math.min(Math.PI / 2.2, camRotX + dy));
+    panStart = { x: e.clientX, y: e.clientY };
+  }
+
+  updateHoverHighlight();
+});
+
+window.addEventListener('mousedown', e => {
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    isPanning = true;
+    panStart = { x: e.clientX, y: e.clientY };
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    isPanning = false;
+  }
+});
+
+window.addEventListener('wheel', e => {
+  camDist = Math.max(15, Math.min(60, camDist + e.deltaY * 0.05));
+});
+
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+function updateHoverHighlight() {
+  clearHighlights();
+  if (!hoveredTile || state.gameOver) return;
+
+  const { x, z } = hoveredTile;
+  const unit = getUnitAtGrid(x, z);
+
+  // Always show tile highlight
+  addHighlight(x, z, materials.highlight);
+
+  if (state.moveMode && state.selectedUnit && state.selectedUnit.team === UNIT_TYPE_XCOM) {
+    const path = findPath(state.selectedUnit.gridX, state.selectedUnit.gridZ, x, z, state.selectedUnit.moveRange, state.selectedUnit.id);
+    if (path) {
+      clearHighlights();
+      addHighlight(x, z, materials.highlightMove);
+      addPathHighlights(path);
+    } else {
+      addHighlight(x, z, materials.highlightInvalid);
+    }
+  }
+
+  if (state.shootMode && state.selectedUnit) {
+    if (unit && unit.team !== state.selectedUnit.team) {
+      const dist = Math.sqrt(
+        Math.pow(state.selectedUnit.gridX - x, 2) +
+        Math.pow(state.selectedUnit.gridZ - z, 2)
+      );
+      if (dist <= state.selectedUnit.range && hasLineOfSight(state.selectedUnit.gridX, state.selectedUnit.gridZ, x, z)) {
+        clearHighlights();
+        addHighlight(x, z, materials.highlightAttack);
+      }
+    }
+  }
+
+  if (state.grenadeMode && state.selectedUnit) {
+    const dist = Math.sqrt(
+      Math.pow(state.selectedUnit.gridX - x, 2) +
+      Math.pow(state.selectedUnit.gridZ - z, 2)
+    );
+    if (dist <= 6) {
+      clearHighlights();
+      addHighlight(x, z, materials.highlightAttack);
+      // Show blast radius
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (Math.abs(dx) + Math.abs(dz) <= 1) {
+            addHighlight(x + dx, z + dz, materials.highlightAttack, 0.08);
+          }
+        }
+      }
+    }
+  }
+}
+
+window.addEventListener('click', e => {
+  if (state.gameOver) return;
+  if (e.button !== 0) return;
+
+  const grid = getGridFromMouse(e);
+  if (!grid) return;
+
+  const { x, z } = grid;
+  const unit = getUnitAtGrid(x, z);
+
+  // Check if clicking on a unit to select it
+  if (unit) {
+    if (state.currentPhase === 'xcom' && unit.team === UNIT_TYPE_XCOM && unit.alive && unit.ap > 0 && !unit.hasActed) {
+      selectUnit(unit);
+      return;
+    }
+    if (state.currentPhase === 'alien' && unit.team === UNIT_TYPE_ALIEN && unit.alive) {
+      selectUnit(unit);
+      return;
+    }
+  }
+
+  // Action execution
+  if (state.selectedUnit && state.selectedUnit.team === UNIT_TYPE_XCOM) {
+    if (state.moveMode) {
+      executeMoveAction(x, z);
+    } else if (state.shootMode) {
+      executeShootAction(x, z);
+    } else if (state.grenadeMode) {
+      executeGrenadeAction(x, z);
+    }
+  }
+});
+
+function executeMoveAction(tx, tz) {
+  const unit = state.selectedUnit;
+  if (!unit || unit.ap <= 0) return;
+
+  checkOverwatchTriggers(unit);
+  if (!unit.alive) return;
+
+  if (executeMove(unit, tx, tz)) {
+    useAction(unit);
+    endUnitActions();
+  }
+}
+
+function executeShootAction(tx, tz) {
+  const unit = state.selectedUnit;
+  if (!unit || unit.ap <= 0) return;
+
+  const target = getUnitAtGrid(tx, tz);
+  if (!target || target.team === unit.team) {
+    addLog('Invalid target!', 'logInfo');
+    return;
+  }
+
+  if (executeShoot(unit, target)) {
+    endUnitActions();
+  }
+}
+
+function executeGrenadeAction(tx, tz) {
+  const unit = state.selectedUnit;
+  if (!unit || unit.ap <= 0) return;
+
+  if (executeGrenade(unit, tx, tz)) {
+    endUnitActions();
+  }
+}
+
+function selectUnit(unit) {
+  state.selectedUnit = unit;
+  clearActionModes();
+  updateUnitMesh(unit);
+  updateUI();
+}
+
+function endUnitActions() {
+  clearActionModes();
+  clearHighlights();
+
+  if (state.selectedUnit && state.selectedUnit.ap <= 0) {
+    state.selectedUnit.hasActed = true;
+    nextUnitInOrder();
+  } else if (state.selectedUnit && state.selectedUnit.ap > 0) {
+    updateUI();
+  }
+}
+
+// ============================================================
+// ACTION MODES
+// ============================================================
+function clearActionModes() {
+  state.moveMode = false;
+  state.shootMode = false;
+  state.grenadeMode = false;
+  document.querySelectorAll('.actionBtn').forEach(b => b.classList.remove('active'));
+}
+
+function setActionMode(action) {
+  clearActionModes();
+  if (action === 'move') state.moveMode = true;
+  else if (action === 'shoot') state.shootMode = true;
+  else if (action === 'grenade') state.grenadeMode = true;
+
+  const btn = document.querySelector(`[data-action="${action}"]`);
+  if (btn) btn.classList.add('active');
+}
+
+// ============================================================
+// UI
+// ============================================================
+function updateUI() {
+  // Turn info
+  document.getElementById('turnNum').textContent = state.turnNumber;
+  document.getElementById('phaseName').textContent = state.currentPhase === 'xcom' ? 'XCOM' : 'ALIEN';
+  document.getElementById('phaseName').style.color = state.currentPhase === 'xcom' ? '#44aaff' : '#ff6644';
+
+  // Enemy count
+  const alienAlive = state.units.filter(u => u.team === UNIT_TYPE_ALIEN && u.alive).length;
+  document.getElementById('enemyCount').textContent = alienAlive;
+
+  // Unit list
+  const unitList = document.getElementById('unitList');
+  unitList.innerHTML = '';
+
+  for (const unit of state.units) {
+    const card = document.createElement('div');
+    card.className = `unitCard ${unit.team === UNIT_TYPE_ALIEN ? 'enemy' : ''} ${!unit.alive ? 'dead' : ''} ${state.selectedUnit?.id === unit.id ? 'selected' : ''}`;
+
+    const hpRatio = unit.alive ? unit.hp / unit.maxHp : 0;
+    const apRatio = unit.alive ? unit.ap / MAX_AP : 0;
+    const ammoRatio = unit.alive ? unit.ammo / unit.maxAmmo : 0;
+
+    card.innerHTML = `
+      <div class="unitName ${unit.team === UNIT_TYPE_XCOM ? 'xcom' : 'alien'}">${unit.name}</div>
+      <div class="statRow">
+        <span style="color:#ff6644;width:18px;font-size:10px">HP</span>
+        <div class="bar"><div class="barFill hpFill" style="width:${hpRatio * 100}%"></div></div>
+        <span style="color:#aaa;font-size:10px;width:30px;text-align:right">${unit.alive ? unit.hp : 0}</span>
+      </div>
+      <div class="statRow">
+        <span style="color:#ffaa00;width:18px;font-size:10px">AP</span>
+        <div class="bar"><div class="barFill apFill" style="width:${apRatio * 100}%"></div></div>
+        <span style="color:#aaa;font-size:10px;width:30px;text-align:right">${unit.ap}/${MAX_AP}</span>
+      </div>
+      <div class="statRow">
+        <span style="color:#4488ff;width:18px;font-size:10px">AM</span>
+        <div class="bar"><div class="barFill ammoFill" style="width:${ammoRatio * 100}%"></div></div>
+        <span style="color:#aaa;font-size:10px;width:30px;text-align:right">${unit.ammo}</span>
+      </div>
+      <div class="unitStats">
+        ${unit.alive ? `${UNIT_DEFS[unit.type].accuracy}% acc | DMG:${UNIT_DEFS[unit.type].damage} | RNG:${UNIT_DEFS[unit.type].range}` : 'ELIMINATED'}
+        ${unit.status ? ` | <span style="color:#ff4444">${unit.status.toUpperCase()}</span>` : ''}
+      </div>
+    `;
+
+    card.onclick = () => {
+      if (unit.alive) selectUnit(unit);
+    };
+
+    unitList.appendChild(card);
+  }
+
+  // Action buttons
+  const isXcomTurn = state.currentPhase === 'xcom';
+  const sel = state.selectedUnit;
+  const canAct = sel && sel.team === UNIT_TYPE_XCOM && sel.alive && sel.ap > 0 && isXcomTurn;
+
+  document.querySelectorAll('.actionBtn').forEach(btn => {
+    btn.disabled = !canAct;
+  });
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  if (hoveredTile && sel) {
+    const target = getUnitAtGrid(hoveredTile.x, hoveredTile.z);
+    if (target) {
+      const dist = Math.sqrt(
+        Math.pow(sel.gridX - target.gridX, 2) +
+        Math.pow(sel.gridZ - target.gridZ, 2)
+      );
+      const chance = calculateHitChance(sel, target);
+      tooltip.textContent = `${target.name} | HP:${target.hp}/${target.maxHp} | Dist:${dist.toFixed(1)} | Hit:${chance}%`;
+      tooltip.style.display = 'block';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+function addLog(text, type = '') {
+  const log = document.getElementById('combatLog');
+  const entry = document.createElement('div');
+  entry.className = `logEntry ${type}`;
+  entry.textContent = text;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+
+  // Keep log manageable
+  while (log.children.length > 50) {
+    log.removeChild(log.firstChild);
+  }
+}
+
+function showTurnOverlay(text) {
+  const overlay = document.getElementById('turnOverlay');
+  const overlayText = document.getElementById('overlayText');
+  overlayText.textContent = text;
+  overlay.style.display = 'flex';
+  setTimeout(() => { overlay.style.display = 'none'; }, 1500);
+}
+
+// ============================================================
+// BUTTON HANDLERS
+// ============================================================
+document.querySelectorAll('.actionBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const action = btn.dataset.action;
+    if (!state.selectedUnit || state.selectedUnit.team !== UNIT_TYPE_XCOM) return;
+    if (!state.selectedUnit.alive || state.selectedUnit.ap <= 0) return;
+    if (state.currentPhase !== 'xcom') return;
+
+    if (action === 'move') {
+      setActionMode('move');
+    } else if (action === 'shoot') {
+      setActionMode('shoot');
+    } else if (action === 'overwatch') {
+      executeOverwatch(state.selectedUnit);
+    } else if (action === 'reload') {
+      executeReload(state.selectedUnit);
+    } else if (action === 'grenade') {
+      setActionMode('grenade');
+    } else if (action === 'hunker') {
+      executeHunker(state.selectedUnit);
+    }
+  });
+});
+
+document.getElementById('endTurnBtn').addEventListener('click', () => {
+  if (state.currentPhase !== 'xcom' || state.gameOver) return;
+
+  // End all remaining XCOM units' turns
+  for (const unit of state.units) {
+    if (unit.team === UNIT_TYPE_XCOM && unit.alive) {
+      unit.ap = 0;
+      unit.hasActed = true;
+      unit.status = null;
+      updateUnitMesh(unit);
+    }
+  }
+
+  clearActionModes();
+  clearHighlights();
+  state.selectedUnit = null;
+
+  // Start alien turn
+  setTimeout(() => {
+    startTurn('alien');
+  }, 500);
+});
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const delta = clock.getDelta();
+
+  handleKeyboard();
+  updateCamera();
+
+  // Animate selection rings
+  for (const unit of state.units) {
+    const meshData = unitMeshes.get(unit.id);
+    if (meshData && meshData.ring && meshData.ring.material.opacity > 0) {
+      meshData.ring.rotation.z += delta * 2;
+    }
+  }
+
+  // Animate health bars to face camera
+  for (const unit of state.units) {
+    const meshData = unitMeshes.get(unit.id);
+    if (meshData) {
+      const { hpBg, hpFill, status, apGroup } = meshData;
+      if (hpBg) hpBg.quaternion.copy(camera.quaternion);
+      if (hpFill) hpFill.quaternion.copy(camera.quaternion);
+      if (status) status.quaternion.copy(camera.quaternion);
+      if (apGroup) apGroup.quaternion.copy(camera.quaternion);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  generateMap();
+  createTileMeshes();
+  spawnSquadrons();
+  updateAllVisibility();
+  updateCamera();
+  updateUI();
+  animate();
+
+  // Start XCOM turn
+  setTimeout(() => {
+    startTurn('xcom');
+  }, 500);
+}
+
+init();
+
+</script>
+</body>
+</html>
